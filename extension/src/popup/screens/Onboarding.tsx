@@ -81,24 +81,24 @@ export function Onboarding({ onDone }: Props) {
         {(mode === 'create' || mode === 'import-mnemonic' || mode === 'import-priv') && (
           <>
             <div>
-              <label>PIN</label>
-              <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} autoFocus />
+              <label htmlFor="onboard-pin">PIN</label>
+              <input id="onboard-pin" name="pin" type="password" autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value)} autoFocus />
             </div>
             <div>
-              <label>confirm PIN</label>
-              <input type="password" value={pin2} onChange={(e) => setPin2(e.target.value)} />
+              <label htmlFor="onboard-pin-confirm">confirm PIN</label>
+              <input id="onboard-pin-confirm" name="pin-confirm" type="password" autoComplete="new-password" value={pin2} onChange={(e) => setPin2(e.target.value)} />
             </div>
 
             {mode === 'import-mnemonic' && (
               <div>
-                <label>seed phrase (12/15/18/21/24 words)</label>
-                <textarea value={mnemonic} onChange={(e) => setMnemonic(e.target.value)} />
+                <label htmlFor="onboard-mnemonic">seed phrase (12/15/18/21/24 words)</label>
+                <textarea id="onboard-mnemonic" name="mnemonic" autoComplete="off" value={mnemonic} onChange={(e) => setMnemonic(e.target.value)} />
               </div>
             )}
             {mode === 'import-priv' && (
               <div>
-                <label>private key (base64, 32 or 64 bytes)</label>
-                <textarea value={priv} onChange={(e) => setPriv(e.target.value)} />
+                <label htmlFor="onboard-priv">private key (base64, 32 or 64 bytes)</label>
+                <textarea id="onboard-priv" name="privateKey" autoComplete="off" value={priv} onChange={(e) => setPriv(e.target.value)} />
               </div>
             )}
 

@@ -81,14 +81,29 @@ export async function sendTransaction(provider: Eip1193Provider, p: SendTxParams
   return await provider.request<string>({ method: 'eth_sendTransaction', params: [params] });
 }
 
-// All ETH reads route through the connected wallet's provider, NOT a public RPC,
-// because (a) public RPCs frequently CORS-block / rate-limit a static origin like
-// octra.ac420.org, producing the dreaded "Failed to fetch", and (b) the wallet
-// already has a working RPC of its own (Infura/Alchemy/etc).
-export async function ethCallProvider(provider: Eip1193Provider, to: string, data: string): Promise<string> {
-  return await provider.request<string>({ method: 'eth_call', params: [{ to, data }, 'latest'] });
+// Reads use a CORS-friendly public RPC pinned to mainnet, NOT the wallet's own
+// provider. Reasons:
+//   - the wallet's chain may be Polygon/Arbitrum/Sepolia/etc when we want to
+//     read a mainnet contract, in which case eth_call returns 0 silently
+//     (contract doesn't exist on the foreign chain) and looks like "user has
+//     0 wOCT" even though they have plenty.
+//   - the wallet caches state per origin and sometimes returns stale 0s.
+// Writes still go through the wallet (must — needs the user's signature).
+export async function ethCallRpc(rpcUrl: string, to: string, data: string): Promise<string> {
+  const r = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }),
+  });
+  if (!r.ok) throw new Error(`eth_call HTTP ${r.status}`);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message ?? 'eth_call failed');
+  return j.result as string;
 }
 
+// Receipt polling stays on the wallet provider — public RPCs rate-limit the
+// 30+ requests this loop fires per minute, and the wallet's own RPC has
+// fresher mempool visibility for txs the wallet just sent.
 export async function getTransactionReceipt(provider: Eip1193Provider, hash: string): Promise<{ status: string; blockNumber: string } | null> {
   return await provider.request<{ status: string; blockNumber: string } | null>({
     method: 'eth_getTransactionReceipt',
@@ -110,9 +125,9 @@ export async function waitForReceipt(provider: Eip1193Provider, hash: string, ti
   return null;
 }
 
-export async function getWoctBalance(provider: Eip1193Provider, holder: string): Promise<bigint> {
+export async function getWoctBalance(rpcUrl: string, holder: string): Promise<bigint> {
   const data = encodeBalanceOfCalldata(holder);
-  const hex = await ethCallProvider(provider, WOCT_ADDR, data);
+  const hex = await ethCallRpc(rpcUrl, WOCT_ADDR, data);
   return BigInt(hex);
 }
 

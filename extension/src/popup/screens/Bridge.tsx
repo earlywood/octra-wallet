@@ -138,12 +138,12 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
             </div>
           </div>
           <div>
-            <label>amount (OCT)</label>
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" inputMode="decimal" />
+            <label htmlFor="bridge-amount">amount (OCT)</label>
+            <input id="bridge-amount" name="amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" inputMode="decimal" autoComplete="off" />
           </div>
           <div>
-            <label>ethereum recipient (0x…)</label>
-            <input value={eth} onChange={(e) => setEth(e.target.value.trim())} placeholder="0x…" />
+            <label htmlFor="bridge-eth-recipient">ethereum recipient (0x…)</label>
+            <input id="bridge-eth-recipient" name="ethRecipient" value={eth} onChange={(e) => setEth(e.target.value.trim())} placeholder="0x…" autoComplete="off" />
           </div>
           {err && <div className="callout err">{err}</div>}
           <button onClick={doLock} disabled={busy || !amount || !eth}>{busy ? 'locking…' : 'lock OCT and open claim'}</button>

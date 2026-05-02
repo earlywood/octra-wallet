@@ -23,24 +23,24 @@ export function Settings() {
   return (
     <div className="center">
       <div>
-        <label>octra rpc</label>
-        <input value={s.rpcUrl} onChange={(e) => setS({ ...s, rpcUrl: e.target.value })} />
+        <label htmlFor="set-rpc">octra rpc</label>
+        <input id="set-rpc" name="rpcUrl" autoComplete="off" value={s.rpcUrl} onChange={(e) => setS({ ...s, rpcUrl: e.target.value })} />
       </div>
       <div>
-        <label>bridge relayer</label>
-        <input value={s.relayerUrl} onChange={(e) => setS({ ...s, relayerUrl: e.target.value })} />
+        <label htmlFor="set-relayer">bridge relayer</label>
+        <input id="set-relayer" name="relayerUrl" autoComplete="off" value={s.relayerUrl} onChange={(e) => setS({ ...s, relayerUrl: e.target.value })} />
       </div>
       <div>
-        <label>explorer</label>
-        <input value={s.explorerUrl} onChange={(e) => setS({ ...s, explorerUrl: e.target.value })} />
+        <label htmlFor="set-explorer">explorer</label>
+        <input id="set-explorer" name="explorerUrl" autoComplete="off" value={s.explorerUrl} onChange={(e) => setS({ ...s, explorerUrl: e.target.value })} />
       </div>
       <div>
-        <label>ethereum rpc (read-only, used to check wOCT balance)</label>
-        <input value={s.ethRpcUrl} onChange={(e) => setS({ ...s, ethRpcUrl: e.target.value })} />
+        <label htmlFor="set-ethrpc">ethereum rpc (read-only, used to check wOCT balance)</label>
+        <input id="set-ethrpc" name="ethRpcUrl" autoComplete="off" value={s.ethRpcUrl} onChange={(e) => setS({ ...s, ethRpcUrl: e.target.value })} />
       </div>
       <div>
-        <label>bridge claim page</label>
-        <input value={s.claimUrl} onChange={(e) => setS({ ...s, claimUrl: e.target.value })} placeholder="https://you.github.io/octra-claim/" />
+        <label htmlFor="set-claimurl">bridge claim page</label>
+        <input id="set-claimurl" name="claimUrl" autoComplete="off" value={s.claimUrl} onChange={(e) => setS({ ...s, claimUrl: e.target.value })} placeholder="https://you.github.io/octra-claim/" />
         <div className="status info" style={{ marginTop: 4 }}>
           static page that handles the ethereum side of the bridge with your browser wallet (MetaMask, Rabby, etc.). open-source — see the project's <code>claim-site/</code> directory.
         </div>

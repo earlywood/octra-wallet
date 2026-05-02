@@ -3,7 +3,9 @@ export const ETH_BRIDGE = '0xE7eD69b852fd2a1406080B26A37e8E04e7dA4caE';
 export const DEFAULT_RELAYER = 'https://relayer-002838819188.octra.network';
 export const DEFAULT_OCTRA_RPC = 'https://octra.network/rpc';
 export const DEFAULT_OCTRA_EXPLORER = 'https://octrascan.io';
-export const DEFAULT_ETH_RPC = 'https://eth.llamarpc.com';
+// publicnode is well-behaved on CORS for browser origins. llamarpc and
+// cloudflare-eth both have intermittent rate-limit / preflight problems.
+export const DEFAULT_ETH_RPC = 'https://ethereum-rpc.publicnode.com';
 export const ETH_CHAIN_ID = 1;
 export const BURN_SELECTOR = '0xe3e3aed0';
 

@@ -40,19 +40,24 @@ const DEFAULTS: Settings = {
   rpcUrl: 'https://octra.network/rpc',
   relayerUrl: 'https://relayer-002838819188.octra.network',
   explorerUrl: 'https://octrascan.io',
-  ethRpcUrl: 'https://eth.llamarpc.com',
+  ethRpcUrl: 'https://ethereum-rpc.publicnode.com',
   claimUrl: 'https://octra.ac420.org/',
 };
 
 export async function getSettings(): Promise<Settings> {
   const r = await chrome.storage.local.get(SETTINGS_KEY);
   const merged = { ...DEFAULTS, ...(r[SETTINGS_KEY] ?? {}) };
-  // one-time migration: an earlier dev build defaulted rpcUrl to the bare host,
-  // which 404s — the actual JSON-RPC endpoint lives at /rpc. Upgrade in place.
+  let migrated = false;
+  // earlier dev defaults that need upgrading in place:
   if (merged.rpcUrl === 'https://octra.network') {
     merged.rpcUrl = 'https://octra.network/rpc';
-    await chrome.storage.local.set({ [SETTINGS_KEY]: merged });
+    migrated = true;
   }
+  if (merged.ethRpcUrl === 'https://eth.llamarpc.com') {
+    merged.ethRpcUrl = 'https://ethereum-rpc.publicnode.com';
+    migrated = true;
+  }
+  if (migrated) await chrome.storage.local.set({ [SETTINGS_KEY]: merged });
   return merged;
 }
 

@@ -27,12 +27,13 @@ export function E2OFlow({ params }: { params: E2OParams }) {
   const [burnTx, setBurnTx] = useState<string | null>(null);
   const [chainOk, setChainOk] = useState(false);
 
-  async function loadBalance(p: Eip1193Provider, addr: string) {
+  async function loadBalance(addr: string) {
     try {
-      const bal = await getWoctBalance(p, addr);
+      const bal = await getWoctBalance(params.ethRpcUrl, addr);
       setWoctBal(bal);
+      console.info('[octra-bridge] wOCT balance for', addr, '=', bal.toString());
     } catch (e) {
-      console.warn('wOCT balance read failed', e);
+      console.warn('[octra-bridge] wOCT balance read failed', e);
       setWoctBal(null);
     }
   }
@@ -43,54 +44,46 @@ export function E2OFlow({ params }: { params: E2OParams }) {
     setPhase('setup');
     setErr(null);
 
-    // Make sure the wallet is on Ethereum mainnet before reading balance.
-    // If the wallet is on Polygon / Arbitrum / Sepolia / etc., the wOCT
-    // contract address is empty there and balanceOf returns 0 — which is
-    // why "balance shows 0 even though I have wOCT."
+    // Always show balance — read goes through the public mainnet RPC, so it
+    // works regardless of whatever chain the wallet is on right now.
+    void loadBalance(addr);
+
+    // Try to flip the wallet to mainnet so the eventual approve/burn signs
+    // on the right chain. If the user declines we don't block balance display,
+    // but we'll re-prompt when they hit "start bridge".
     try {
       const cur = await getChainId(p);
-      if (cur !== 1) {
-        await ensureMainnet(p);
-      }
+      setChainOk(cur === 1);
+      if (cur !== 1) await ensureMainnet(p);
       setChainOk(true);
-      // some wallets briefly invalidate state during the switch — small
-      // delay before the read so we don't race the chain transition.
-      await new Promise((r) => setTimeout(r, 200));
-      await loadBalance(p, addr);
     } catch (e) {
       setChainOk(false);
-      setErr((e as Error).message ?? 'switch to Ethereum mainnet to continue');
     }
 
-    // Watch for chain changes after connect (user may switch in their wallet).
     if (p.on) {
       p.on('chainChanged', async () => {
         try {
           const cur = await getChainId(p);
-          const ok = cur === 1;
-          setChainOk(ok);
-          if (ok) {
-            setErr(null);
-            await loadBalance(p, addr);
-          } else {
-            setErr('switch to Ethereum mainnet to continue');
-            setWoctBal(null);
-          }
+          setChainOk(cur === 1);
+          if (cur === 1) setErr(null);
         } catch { /* ignore */ }
       });
     }
   }
 
   async function retryChainSwitch() {
-    if (!provider || !ethAddr) return;
+    if (!provider) return;
     setErr(null);
     try {
       await ensureMainnet(provider);
       setChainOk(true);
-      await loadBalance(provider, ethAddr);
     } catch (e) {
       setErr((e as Error).message);
     }
+  }
+
+  async function refreshBalance() {
+    if (ethAddr) await loadBalance(ethAddr);
   }
 
   async function start() {
@@ -140,7 +133,16 @@ export function E2OFlow({ params }: { params: E2OParams }) {
       <div className="card">
         <div className="kv"><span className="k">direction</span><span className="v">wOCT → OCT</span></div>
         {ethAddr && <div className="kv"><span className="k">eth wallet</span><span className="v">{ethAddr}</span></div>}
-        {woctBal != null && <div className="kv"><span className="k">wOCT balance</span><span className="v">{formatRawAmount(String(weiToMicroOct(woctBal)))} wOCT</span></div>}
+        {ethAddr && (
+          <div className="kv">
+            <span className="k">wOCT balance</span>
+            <span className="v">
+              {woctBal == null ? '—' : `${formatRawAmount(String(weiToMicroOct(woctBal)))} wOCT`}
+              {' '}
+              <a href="#" onClick={(e) => { e.preventDefault(); refreshBalance(); }} style={{ fontSize: 11, marginLeft: 6 }}>refresh</a>
+            </span>
+          </div>
+        )}
         {approveTx && <div className="kv"><span className="k">approve tx</span><span className="v"><a href={`https://etherscan.io/tx/${approveTx}`} target="_blank" rel="noopener noreferrer">{approveTx.slice(0, 16)}…</a></span></div>}
         {burnTx && <div className="kv"><span className="k">burn tx</span><span className="v"><a href={`https://etherscan.io/tx/${burnTx}`} target="_blank" rel="noopener noreferrer">{burnTx.slice(0, 16)}…</a></span></div>}
       </div>
@@ -159,13 +161,13 @@ export function E2OFlow({ params }: { params: E2OParams }) {
       {phase === 'setup' && chainOk && (
         <div className="card">
           <div>
-            <label>amount (OCT)</label>
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" inputMode="decimal" />
+            <label htmlFor="e2o-amount">amount (OCT)</label>
+            <input id="e2o-amount" name="amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" inputMode="decimal" autoComplete="off" />
           </div>
           <div className="spacer" />
           <div>
-            <label>octra recipient (oct…)</label>
-            <input value={octRecip} onChange={(e) => setOctRecip(e.target.value.trim())} placeholder="oct…" />
+            <label htmlFor="e2o-recipient">octra recipient (oct…)</label>
+            <input id="e2o-recipient" name="octraRecipient" value={octRecip} onChange={(e) => setOctRecip(e.target.value.trim())} placeholder="oct…" autoComplete="off" />
           </div>
           <div className="spacer" />
           {err && <div className="callout err" style={{ marginBottom: 10 }}>{err}</div>}

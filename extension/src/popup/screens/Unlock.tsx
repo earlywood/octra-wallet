@@ -39,9 +39,12 @@ export function Unlock({ onUnlock }: Props) {
           <div className="status info">enter your PIN to continue</div>
         </div>
         <div>
-          <label>PIN</label>
+          <label htmlFor="unlock-pin">PIN</label>
           <input
+            id="unlock-pin"
+            name="pin"
             type="password"
+            autoComplete="current-password"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && doUnlock()}

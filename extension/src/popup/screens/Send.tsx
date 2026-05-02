@@ -28,16 +28,16 @@ export function Send({ onDone }: Props) {
   return (
     <div className="center">
       <div>
-        <label>recipient (oct…)</label>
-        <input value={to} onChange={(e) => setTo(e.target.value.trim())} placeholder="oct…" />
+        <label htmlFor="send-to">recipient (oct…)</label>
+        <input id="send-to" name="to" value={to} onChange={(e) => setTo(e.target.value.trim())} placeholder="oct…" autoComplete="off" />
       </div>
       <div>
-        <label>amount (OCT)</label>
-        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" inputMode="decimal" />
+        <label htmlFor="send-amount">amount (OCT)</label>
+        <input id="send-amount" name="amount" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.0" inputMode="decimal" autoComplete="off" />
       </div>
       <div>
-        <label>message (optional)</label>
-        <input value={message} onChange={(e) => setMessage(e.target.value)} />
+        <label htmlFor="send-message">message (optional)</label>
+        <input id="send-message" name="message" value={message} onChange={(e) => setMessage(e.target.value)} autoComplete="off" />
       </div>
       {err && <div className="callout err">{err}</div>}
       {okHash && (
