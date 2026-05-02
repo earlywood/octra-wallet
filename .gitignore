@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+.vite/
+*.tsbuildinfo
+
+# claude code local settings
+.claude/
+
+# logs and editor cruft
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# upstream C++ source kept locally as protocol reference (GPL-licensed; not part
+# of this repo's distribution). re-clone from github.com/octra-labs/webcli if needed.
+webcli/

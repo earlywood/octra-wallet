@@ -1,0 +1,40 @@
+name: Deploy claim-site to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'claim-site/**'
+      - '.github/workflows/deploy-claim-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: claim-site/package-lock.json
+
+      - name: Install
+        working-directory: claim-site
+        run: npm ci
+
+      - name: Build
+        working-directory: claim-site
+        run: npm run build
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: claim-site/dist
+          publish_branch: gh-pages
+          force_orphan: true
