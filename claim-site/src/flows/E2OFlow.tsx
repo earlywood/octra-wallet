@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Steps, type StepDef } from '../components/Steps';
 import { WalletPicker } from '../components/WalletPicker';
 import { formatRawAmount, octToWei, parseAmountToRaw, weiToMicroOct } from '../lib/bridge';
-import { approveWoct, burnWoct, getWoctBalance, waitForReceipt, type Eip1193Provider } from '../lib/eth';
+import { approveWoct, burnWoct, ensureMainnet, getChainId, getWoctBalance, waitForReceipt, type Eip1193Provider } from '../lib/eth';
 import { DEFAULT_OCTRA_EXPLORER } from '../lib/bridge';
 
 export interface E2OParams {
@@ -25,12 +25,72 @@ export function E2OFlow({ params }: { params: E2OParams }) {
   const [err, setErr] = useState<string | null>(null);
   const [approveTx, setApproveTx] = useState<string | null>(null);
   const [burnTx, setBurnTx] = useState<string | null>(null);
+  const [chainOk, setChainOk] = useState(false);
 
-  function onConnected(p: Eip1193Provider, addr: string) {
+  async function loadBalance(p: Eip1193Provider, addr: string) {
+    try {
+      const bal = await getWoctBalance(p, addr);
+      setWoctBal(bal);
+    } catch (e) {
+      console.warn('wOCT balance read failed', e);
+      setWoctBal(null);
+    }
+  }
+
+  async function onConnected(p: Eip1193Provider, addr: string) {
     setProvider(p);
     setEthAddr(addr);
     setPhase('setup');
-    getWoctBalance(p, addr).then(setWoctBal).catch(() => {});
+    setErr(null);
+
+    // Make sure the wallet is on Ethereum mainnet before reading balance.
+    // If the wallet is on Polygon / Arbitrum / Sepolia / etc., the wOCT
+    // contract address is empty there and balanceOf returns 0 — which is
+    // why "balance shows 0 even though I have wOCT."
+    try {
+      const cur = await getChainId(p);
+      if (cur !== 1) {
+        await ensureMainnet(p);
+      }
+      setChainOk(true);
+      // some wallets briefly invalidate state during the switch — small
+      // delay before the read so we don't race the chain transition.
+      await new Promise((r) => setTimeout(r, 200));
+      await loadBalance(p, addr);
+    } catch (e) {
+      setChainOk(false);
+      setErr((e as Error).message ?? 'switch to Ethereum mainnet to continue');
+    }
+
+    // Watch for chain changes after connect (user may switch in their wallet).
+    if (p.on) {
+      p.on('chainChanged', async () => {
+        try {
+          const cur = await getChainId(p);
+          const ok = cur === 1;
+          setChainOk(ok);
+          if (ok) {
+            setErr(null);
+            await loadBalance(p, addr);
+          } else {
+            setErr('switch to Ethereum mainnet to continue');
+            setWoctBal(null);
+          }
+        } catch { /* ignore */ }
+      });
+    }
+  }
+
+  async function retryChainSwitch() {
+    if (!provider || !ethAddr) return;
+    setErr(null);
+    try {
+      await ensureMainnet(provider);
+      setChainOk(true);
+      await loadBalance(provider, ethAddr);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
   }
 
   async function start() {
@@ -87,7 +147,16 @@ export function E2OFlow({ params }: { params: E2OParams }) {
 
       {phase === 'connect' && <WalletPicker onConnected={onConnected} />}
 
-      {phase === 'setup' && (
+      {phase === 'setup' && !chainOk && (
+        <div className="card">
+          <div className="callout warn" style={{ marginBottom: 12 }}>
+            your wallet is on the wrong network. switch to <strong>Ethereum mainnet</strong> to continue — wOCT only exists there.
+          </div>
+          <button onClick={retryChainSwitch}>switch to Ethereum mainnet</button>
+        </div>
+      )}
+
+      {phase === 'setup' && chainOk && (
         <div className="card">
           <div>
             <label>amount (OCT)</label>

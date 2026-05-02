@@ -17,7 +17,7 @@ export function Receive({ address }: Props) {
       </div>
       <button onClick={copy}>{copied ? 'copied!' : 'copy address'}</button>
       <div className="status info">
-        share this address to receive OCT. anyone holding only this address cannot move your funds.
+        share this address to receive OCT.
       </div>
     </div>
   );

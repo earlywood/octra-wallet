@@ -9,8 +9,6 @@ interface Props { address: string; balanceRaw: string | null; onLockDone: () => 
 
 type Dir = 'o2e' | 'e2o';
 
-function shortHash(s: string, head = 8, tail = 6) { return s.length > head + tail + 1 ? s.slice(0, head) + '…' + s.slice(-tail) : s; }
-
 function statusLabel(s: BridgeEntry['status']): string {
   switch (s) {
     case 'locked': return 'locked';
@@ -161,8 +159,19 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
           <div className="callout mono" style={{ fontSize: 11 }}>{address}</div>
           <button onClick={openE2oFlow}>open burn flow →</button>
           <hr />
-          <div className="kv"><span className="k">wOCT contract</span><span className="mono">{shortHash(WOCT_ADDR, 6, 4)}</span></div>
-          <div className="kv"><span className="k">eth bridge</span><span className="mono">{shortHash(ETH_BRIDGE, 6, 4)}</span></div>
+          <div className="section-label">contracts</div>
+          <div className="kv">
+            <span className="k">wOCT</span>
+            <a className="mono" href={`https://etherscan.io/token/${WOCT_ADDR}`} target="_blank" rel="noopener noreferrer">
+              {WOCT_ADDR}
+            </a>
+          </div>
+          <div className="kv">
+            <span className="k">eth bridge</span>
+            <a className="mono" href={`https://etherscan.io/address/${ETH_BRIDGE}`} target="_blank" rel="noopener noreferrer">
+              {ETH_BRIDGE}
+            </a>
+          </div>
         </>
       )}
 
