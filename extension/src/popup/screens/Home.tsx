@@ -5,6 +5,7 @@ import { Send } from './Send';
 import { Receive } from './Receive';
 import { Bridge } from './Bridge';
 import { Settings } from './Settings';
+import { Logo } from '../Logo';
 
 interface Props { address: string; onLock: () => void; }
 
@@ -18,6 +19,13 @@ export function Home({ address, onLock }: Props) {
   const [nonce, setNonce] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  function copyAddr() {
+    navigator.clipboard.writeText(address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }
 
   async function loadBalance() {
     setBusy(true);
@@ -39,9 +47,21 @@ export function Home({ address, onLock }: Props) {
   return (
     <div className="app">
       <div className="topbar">
-        <div>
-          <div className="brand">octra wallet</div>
-          <div className="addr" title={address}>{shortAddr(address)}</div>
+        <div className="brand-row">
+          <Logo size={22} />
+          <div className="brand-text">
+            <div className="brand">octra</div>
+            <div
+              className={`addr${copied ? ' copied' : ''}`}
+              title="click to copy address"
+              onClick={copyAddr}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && copyAddr()}
+            >
+              {copied ? 'copied!' : shortAddr(address)}
+            </div>
+          </div>
         </div>
         <button className="ghost" onClick={lock} style={{ padding: '5px 10px', fontSize: 11 }}>lock</button>
       </div>
@@ -59,7 +79,7 @@ export function Home({ address, onLock }: Props) {
           <>
             <div className="balance-card">
               <div className="label">balance</div>
-              <div className="value">{balance == null ? '—' : formatRawAmount(balance)} OCT</div>
+              <div className="value">{balance == null ? '—' : formatRawAmount(balance)}<span className="unit">OCT</span></div>
               <div className="sub">nonce {nonce ?? '—'}</div>
             </div>
             {err && <div className="callout err">{err}</div>}

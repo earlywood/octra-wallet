@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { send } from '../../lib/messages';
+import { Logo } from '../Logo';
 
 interface Props { onUnlock: () => void; }
 
@@ -25,10 +26,16 @@ export function Unlock({ onUnlock }: Props) {
 
   return (
     <div className="app">
-      <div className="topbar"><span className="brand">octra wallet</span></div>
+      <div className="topbar">
+        <div className="brand-row">
+          <Logo size={22} />
+          <span className="brand">octra</span>
+        </div>
+      </div>
       <div className="content center">
-        <div style={{ textAlign: 'center', padding: '14px 0' }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>unlock</div>
+        <div style={{ textAlign: 'center', padding: '24px 0 12px' }}>
+          <Logo size={40} />
+          <div style={{ fontSize: 16, fontWeight: 600, marginTop: 10 }}>unlock</div>
           <div className="status info">enter your PIN to continue</div>
         </div>
         <div>

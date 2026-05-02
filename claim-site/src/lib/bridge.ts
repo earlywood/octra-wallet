@@ -1,7 +1,7 @@
 export const WOCT_ADDR  = '0x4647e1fE715c9e23959022C2416C71867F5a6E80';
 export const ETH_BRIDGE = '0xE7eD69b852fd2a1406080B26A37e8E04e7dA4caE';
 export const DEFAULT_RELAYER = 'https://relayer-002838819188.octra.network';
-export const DEFAULT_OCTRA_RPC = 'https://octra.network';
+export const DEFAULT_OCTRA_RPC = 'https://octra.network/rpc';
 export const DEFAULT_OCTRA_EXPLORER = 'https://octrascan.io';
 export const DEFAULT_ETH_RPC = 'https://eth.llamarpc.com';
 export const ETH_CHAIN_ID = 1;

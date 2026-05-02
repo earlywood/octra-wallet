@@ -1,6 +1,19 @@
 import { O2EFlow, type O2EParams } from './flows/O2EFlow';
 import { E2OFlow, type E2OParams } from './flows/E2OFlow';
 import { DEFAULT_ETH_RPC, DEFAULT_OCTRA_EXPLORER, DEFAULT_OCTRA_RPC, DEFAULT_RELAYER } from './lib/bridge';
+import { Logo } from './components/Logo';
+
+function Header({ subtitle }: { subtitle: string }) {
+  return (
+    <>
+      <div className="brand-row">
+        <Logo size={28} />
+        <span className="brand">octra bridge</span>
+      </div>
+      <div className="tagline">{subtitle}</div>
+    </>
+  );
+}
 
 function readParams() {
   const u = new URL(window.location.href);
@@ -25,8 +38,7 @@ export function App() {
     if (!p.lockTx || !p.amount || !p.recipient) {
       return (
         <div className="shell">
-          <div className="brand">octra bridge</div>
-          <div className="tagline">claim wOCT after locking OCT</div>
+          <Header subtitle="claim wOCT after locking OCT" />
           <div className="card">
             <div className="callout warn">
               missing parameters. this page is opened by the Octra Wallet extension after a lock — start your bridge from the extension.
@@ -47,8 +59,7 @@ export function App() {
     };
     return (
       <div className="shell">
-        <div className="brand">octra bridge</div>
-        <div className="tagline">claim wOCT after locking OCT</div>
+        <Header subtitle="claim wOCT after locking OCT" />
         <O2EFlow params={params} />
       </div>
     );
@@ -63,8 +74,7 @@ export function App() {
   };
   return (
     <div className="shell">
-      <div className="brand">octra bridge</div>
-      <div className="tagline">burn wOCT to unlock OCT</div>
+      <Header subtitle="burn wOCT to unlock OCT" />
       <E2OFlow params={params} />
     </div>
   );

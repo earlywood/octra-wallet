@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { send } from '../../lib/messages';
+import { Logo } from '../Logo';
 
 interface Props { onDone: () => void; }
 
@@ -57,12 +58,18 @@ export function Onboarding({ onDone }: Props) {
 
   return (
     <div className="app">
-      <div className="topbar"><span className="brand">octra wallet</span></div>
+      <div className="topbar">
+        <div className="brand-row">
+          <Logo size={22} />
+          <span className="brand">octra</span>
+        </div>
+      </div>
       <div className="content center">
         {mode === 'choose' && (
           <>
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>welcome</div>
+            <div style={{ textAlign: 'center', padding: '24px 0 12px' }}>
+              <Logo size={48} />
+              <div style={{ fontSize: 18, fontWeight: 600, marginTop: 12, marginBottom: 4 }}>welcome</div>
               <div className="status info">create a new wallet, or import an existing one</div>
             </div>
             <button onClick={() => setMode('create')}>create new wallet</button>

@@ -105,7 +105,7 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     setClaimTx(txHash);
     setPhase('wait_claim');
     setStatusMsg('claim transaction submitted. waiting for confirmation…');
-    const r = await waitForReceipt(params.ethRpcUrl, txHash, 300_000);
+    const r = await waitForReceipt(provider, txHash, 300_000);
     if (!r) { setErr('claim tx not confirmed in 5min. check etherscan.'); setPhase('failed'); return; }
     if (r.status !== '0x1') { setErr('claim tx reverted on-chain.'); setPhase('failed'); return; }
     setPhase('done');
