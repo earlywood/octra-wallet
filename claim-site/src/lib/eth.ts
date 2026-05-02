@@ -89,16 +89,46 @@ export async function sendTransaction(provider: Eip1193Provider, p: SendTxParams
 //     0 wOCT" even though they have plenty.
 //   - the wallet caches state per origin and sometimes returns stale 0s.
 // Writes still go through the wallet (must — needs the user's signature).
-export async function ethCallRpc(rpcUrl: string, to: string, data: string): Promise<string> {
-  const r = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }),
+
+// Fallback chain: if any one of these is rate-limiting or down, the next is
+// tried. All have open CORS for browser origins as of the last check.
+const FALLBACK_ETH_RPCS = [
+  'https://ethereum-rpc.publicnode.com',
+  'https://rpc.ankr.com/eth',
+  'https://eth.llamarpc.com',
+  'https://eth.merkle.io',
+];
+
+export interface EthCallResult { hex: string; rpc: string }
+
+export async function ethCallRpc(preferredRpc: string, to: string, data: string): Promise<EthCallResult> {
+  // Try the preferred URL first, then walk the fallback chain. De-dupe so we
+  // don't hit the same endpoint twice.
+  const seen = new Set<string>();
+  const chain = [preferredRpc, ...FALLBACK_ETH_RPCS].filter((u) => {
+    if (!u || seen.has(u)) return false;
+    seen.add(u);
+    return true;
   });
-  if (!r.ok) throw new Error(`eth_call HTTP ${r.status}`);
-  const j = await r.json();
-  if (j.error) throw new Error(j.error.message ?? 'eth_call failed');
-  return j.result as string;
+  let lastErr: Error | null = null;
+  for (const url of chain) {
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }),
+      });
+      if (!r.ok) { lastErr = new Error(`HTTP ${r.status}`); continue; }
+      const j = await r.json();
+      if (j.error) { lastErr = new Error(j.error.message ?? 'eth_call failed'); continue; }
+      const hex = j.result as string;
+      if (typeof hex === 'string' && hex.startsWith('0x')) return { hex, rpc: url };
+      lastErr = new Error('malformed result');
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastErr ?? new Error('all RPCs failed');
 }
 
 // Receipt polling stays on the wallet provider — public RPCs rate-limit the
@@ -125,10 +155,14 @@ export async function waitForReceipt(provider: Eip1193Provider, hash: string, ti
   return null;
 }
 
-export async function getWoctBalance(rpcUrl: string, holder: string): Promise<bigint> {
+export interface WoctBalanceResult { wei: bigint; hex: string; rpc: string }
+
+export async function getWoctBalance(rpcUrl: string, holder: string): Promise<WoctBalanceResult> {
   const data = encodeBalanceOfCalldata(holder);
-  const hex = await ethCallRpc(rpcUrl, WOCT_ADDR, data);
-  return BigInt(hex);
+  const r = await ethCallRpc(rpcUrl, WOCT_ADDR, data);
+  // empty '0x' (no contract on this chain) → throw instead of silently 0
+  if (r.hex === '0x') throw new Error(`empty response from ${r.rpc} — wrong chain or contract removed?`);
+  return { wei: BigInt(r.hex), hex: r.hex, rpc: r.rpc };
 }
 
 export async function approveWoct(provider: Eip1193Provider, from: string, amountWei: bigint): Promise<string> {

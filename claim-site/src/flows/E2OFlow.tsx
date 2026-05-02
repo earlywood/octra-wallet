@@ -26,15 +26,25 @@ export function E2OFlow({ params }: { params: E2OParams }) {
   const [approveTx, setApproveTx] = useState<string | null>(null);
   const [burnTx, setBurnTx] = useState<string | null>(null);
   const [chainOk, setChainOk] = useState(false);
+  const [balRpc, setBalRpc] = useState<string | null>(null);
+  const [balErr, setBalErr] = useState<string | null>(null);
+  const [balLoading, setBalLoading] = useState(false);
 
   async function loadBalance(addr: string) {
+    setBalLoading(true);
+    setBalErr(null);
     try {
-      const bal = await getWoctBalance(params.ethRpcUrl, addr);
-      setWoctBal(bal);
-      console.info('[octra-bridge] wOCT balance for', addr, '=', bal.toString());
+      const r = await getWoctBalance(params.ethRpcUrl, addr);
+      setWoctBal(r.wei);
+      setBalRpc(new URL(r.rpc).host);
+      console.info('[octra-bridge] wOCT balance', { holder: addr, wei: r.wei.toString(), hex: r.hex, rpc: r.rpc });
     } catch (e) {
+      const msg = (e as Error).message;
       console.warn('[octra-bridge] wOCT balance read failed', e);
       setWoctBal(null);
+      setBalErr(msg);
+    } finally {
+      setBalLoading(false);
     }
   }
 
@@ -67,6 +77,21 @@ export function E2OFlow({ params }: { params: E2OParams }) {
           setChainOk(cur === 1);
           if (cur === 1) setErr(null);
         } catch { /* ignore */ }
+      });
+      // CRITICAL: re-read balance if user switches accounts in the wallet
+      // after connect — otherwise we keep showing the first account's balance.
+      p.on('accountsChanged', async (...args: unknown[]) => {
+        const accts = args[0] as string[] | undefined;
+        const next = accts?.[0];
+        if (next) {
+          setEthAddr(next);
+          await loadBalance(next);
+        } else {
+          // user disconnected
+          setEthAddr(null);
+          setWoctBal(null);
+          setPhase('connect');
+        }
       });
     }
   }
@@ -134,14 +159,29 @@ export function E2OFlow({ params }: { params: E2OParams }) {
         <div className="kv"><span className="k">direction</span><span className="v">wOCT → OCT</span></div>
         {ethAddr && <div className="kv"><span className="k">eth wallet</span><span className="v">{ethAddr}</span></div>}
         {ethAddr && (
-          <div className="kv">
-            <span className="k">wOCT balance</span>
-            <span className="v">
-              {woctBal == null ? '—' : `${formatRawAmount(String(weiToMicroOct(woctBal)))} wOCT`}
-              {' '}
-              <a href="#" onClick={(e) => { e.preventDefault(); refreshBalance(); }} style={{ fontSize: 11, marginLeft: 6 }}>refresh</a>
-            </span>
-          </div>
+          <>
+            <div className="kv">
+              <span className="k">wOCT balance</span>
+              <span className="v">
+                {balLoading
+                  ? <span className="spinner" />
+                  : woctBal == null
+                    ? <span style={{ color: 'var(--err)' }}>read failed</span>
+                    : `${formatRawAmount(String(weiToMicroOct(woctBal)))} wOCT`}
+                {' '}
+                <a href="#" onClick={(e) => { e.preventDefault(); refreshBalance(); }} style={{ fontSize: 11, marginLeft: 6 }}>refresh</a>
+              </span>
+            </div>
+            {balRpc && (
+              <div className="kv" style={{ paddingTop: 0 }}>
+                <span className="k" style={{ fontSize: 11 }}>via</span>
+                <span className="v" style={{ fontSize: 11, color: 'var(--muted)' }}>{balRpc}</span>
+              </div>
+            )}
+            {balErr && (
+              <div className="callout err" style={{ marginTop: 8, fontSize: 12 }}>balance read: {balErr}</div>
+            )}
+          </>
         )}
         {approveTx && <div className="kv"><span className="k">approve tx</span><span className="v"><a href={`https://etherscan.io/tx/${approveTx}`} target="_blank" rel="noopener noreferrer">{approveTx.slice(0, 16)}…</a></span></div>}
         {burnTx && <div className="kv"><span className="k">burn tx</span><span className="v"><a href={`https://etherscan.io/tx/${burnTx}`} target="_blank" rel="noopener noreferrer">{burnTx.slice(0, 16)}…</a></span></div>}
