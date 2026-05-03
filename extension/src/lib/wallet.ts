@@ -73,6 +73,10 @@ export interface UnlockedSession {
    *  to re-prompt for the PIN. session storage clears on browser restart. */
   pin: string;
   accounts: Record<string, { address: string; publicKeyB64: string; privSeed32B64: string }>;
+  /** cached public metadata (label, source, hdIndex, etc) so listAccountsPublic
+   *  doesn't re-decrypt the vault on every STATUS call. write ops refresh it
+   *  via plainToSession after they re-encrypt. */
+  meta: AccountPublic[];
   activeAccountId: string;
 }
 
@@ -243,7 +247,7 @@ function plainToSession(plain: VaultPlaintextV2, pin: string): UnlockedSession {
   for (const a of plain.accounts) {
     accounts[a.id] = { address: a.address, publicKeyB64: a.publicKeyB64, privSeed32B64: a.privSeed32B64 };
   }
-  return { pin, accounts, activeAccountId: plain.activeAccountId };
+  return { pin, accounts, meta: plain.accounts.map(toPublic), activeAccountId: plain.activeAccountId };
 }
 
 export async function unlockVault(pin: string): Promise<{ activeAccount: AccountPublic; accounts: AccountPublic[] }> {
@@ -283,8 +287,11 @@ function toPublic(a: AccountInVault): AccountPublic {
 }
 
 export async function listAccountsPublic(): Promise<{ accounts: AccountPublic[]; activeAccountId: string }> {
-  const { plain } = await readPlainViaSession();
-  return { accounts: plain.accounts.map(toPublic), activeAccountId: plain.activeAccountId };
+  // Reads from the session cache — no PBKDF2 decrypt on every call.
+  // Write ops (add/rename/remove/setActive) refresh the cache via
+  // plainToSession after re-encrypting, so this stays in sync.
+  const session = await requireSession();
+  return { accounts: session.meta, activeAccountId: session.activeAccountId };
 }
 
 export async function getActiveAccountSeed(): Promise<{ address: string; publicKeyB64: string; privSeed32B64: string }> {
