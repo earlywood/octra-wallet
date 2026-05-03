@@ -61,7 +61,7 @@ export function Onboarding({ onDone }: Props) {
       <div className="topbar">
         <div className="brand-row">
           <Logo size={26} />
-          <span className="brand"><span className="tag">UNOFFICIAL</span><span className="strike">OCTRA</span></span>
+          <span className="brand"><span className="tag">UNOFFICIAL</span><span className="censored">OCTRA</span></span>
         </div>
       </div>
       <div className="content center">

@@ -1,61 +1,79 @@
 // Graffiti / sticker-bomb overlay. Renders absolutely-positioned spray-paint
-// tags + chibi eyes in the empty space around the main content. pointer-events
-// disabled throughout so it never interferes with clicks or text selection.
+// tags + one Milady image per page in the empty space around the main content.
+// pointer-events disabled throughout so it never interferes with clicks or
+// text selection.
 
-interface MiladyEyesProps { size?: number; color?: string; pupilColor?: string }
+interface MiladyProps { size?: number; opacity?: number; rotate?: number; tint?: 'yellow' | 'red' | 'white'; style?: React.CSSProperties }
 
-// Two oversized chibi eyes side-by-side with a tiny highlight in each pupil.
-// Inspired by the milady maker eye style — large white sclera, thin outline,
-// round pupil, shine dot.
-export function MiladyEyes({ size = 70, color = '#0a0e14', pupilColor = '#0a0e14' }: MiladyEyesProps) {
-  const w = size;
-  const h = size * 0.55;
+// Resolve milady.png across both runtimes:
+//  - extension popup → chrome.runtime.getURL (chrome-extension://… origin)
+//  - static claim-site → relative URL under vite's BASE_URL
+function miladySrc(): string {
+  const cr = (globalThis as { chrome?: { runtime?: { getURL?: (p: string) => string } } }).chrome;
+  if (cr?.runtime?.getURL) {
+    try { return cr.runtime.getURL('milady.png'); } catch { /* not in extension */ }
+  }
+  return `${import.meta.env.BASE_URL}milady.png`;
+}
+
+// One small Milady (anime-eyes silhouette) — uses the actual milady.png,
+// much truer to the milady-maker aesthetic than a hand-rolled SVG. Tinted via
+// CSS filter so it can pop yellow / red / pure white per page without needing
+// multiple image variants.
+const TINT_FILTERS = {
+  yellow: 'invert(0.85) sepia(1) saturate(6) hue-rotate(0deg) brightness(1.1)',
+  red:    'invert(0.5)  sepia(1) saturate(8) hue-rotate(-30deg) brightness(1.05)',
+  white:  'invert(1) brightness(1.4) contrast(1.1)',
+};
+
+export function Milady({ size = 110, opacity = 0.55, rotate = 0, tint = 'yellow', style }: MiladyProps) {
   return (
-    <svg width={w} height={h} viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      {/* eye 1 */}
-      <ellipse cx="55" cy="58" rx="45" ry="42" fill="#fff" stroke={color} strokeWidth="6" />
-      <circle cx="55" cy="65" r="18" fill={pupilColor} />
-      <circle cx="48" cy="55" r="6" fill="#fff" />
-      <circle cx="64" cy="74" r="2.5" fill="#fff" opacity="0.8" />
-      {/* eye 2 */}
-      <ellipse cx="145" cy="58" rx="45" ry="42" fill="#fff" stroke={color} strokeWidth="6" />
-      <circle cx="145" cy="65" r="18" fill={pupilColor} />
-      <circle cx="138" cy="55" r="6" fill="#fff" />
-      <circle cx="154" cy="74" r="2.5" fill="#fff" opacity="0.8" />
-    </svg>
+    <img
+      src={miladySrc()}
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        opacity,
+        transform: `rotate(${rotate}deg)`,
+        pointerEvents: 'none',
+        userSelect: 'none',
+        filter: TINT_FILTERS[tint],
+        mixBlendMode: 'screen',
+        ...style,
+      }}
+    />
   );
 }
 
 interface TagProps {
   text: string;
-  color?: string;       // text color
-  size?: number;        // font-size in px
-  rotate?: number;      // degrees
-  style?: React.CSSProperties; // additional positioning
+  color?: string;
+  size?: number;
+  rotate?: number;
+  flicker?: boolean;
+  style?: React.CSSProperties;
 }
 
-// Spray-paint sticker text. Heavy shadow simulates the dark spray ring around
-// the colored core; tiny blur on top adds the soft halo.
-export function Tag({ text, color = '#ffe600', size = 22, rotate = -8, style }: TagProps) {
+// Spray-paint sticker text. Uses Permanent Marker as the primary face (loaded
+// from /public/fonts/) with Impact as a fallback while the woff2 fetches.
+// Heavy black halo + colored glow simulates the spray ring around the core.
+export function Tag({ text, color = '#ffe600', size = 22, rotate = -8, flicker, style }: TagProps) {
   return (
     <span
       aria-hidden="true"
+      className={flicker ? 'tag tag-flicker' : 'tag'}
       style={{
         position: 'absolute',
-        fontFamily: '"Impact", "Arial Narrow", "Arial Black", sans-serif',
-        fontWeight: 900,
         fontSize: size,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
         color,
         textShadow:
           '-1px -1px 0 #000, 2px -1px 0 #000, -1px 2px 0 #000, 2px 2px 0 #000, ' +
-          `0 0 10px ${color}55, 0 0 2px #000`,
+          `0 0 14px ${color}66, 0 0 2px #000`,
         transform: `rotate(${rotate}deg)`,
-        userSelect: 'none',
-        pointerEvents: 'none',
-        whiteSpace: 'nowrap',
-        opacity: 0.92,
+        ['--tag-glow' as string]: `${color}66`,
         ...style,
       }}
     >
@@ -64,42 +82,35 @@ export function Tag({ text, color = '#ffe600', size = 22, rotate = -8, style }: 
   );
 }
 
-// Cluster of decorations laid out around the page edges. Variants for the
-// popup (tight 360px) and claim site (full page) so they sit in the actual
-// margins without crowding content.
+// Full-page composition for the claim site. One Milady, eight tags, no
+// wagmi, lean cyberpunk-snobbish.
 export function ClaimSiteGraffiti() {
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
-      <Tag text="chknen nuget"        color="#ffe600" size={36} rotate={-12} style={{ top: '10vh',   left: '4vw' }} />
-      <Tag text="india does not forgive" color="#ff1f3a" size={28} rotate={6}   style={{ top: '34vh',  right: '3vw' }} />
-      <Tag text="wagmi"                color="#ffe600" size={56} rotate={-4}  style={{ bottom: '14vh', left: '6vw' }} />
-      <Tag text="trust no relayer"     color="#ffe600" size={20} rotate={3}   style={{ top: '62vh',  left: '2vw' }} />
-      <Tag text="post-FHE depression"  color="#ff1f3a" size={22} rotate={-6}  style={{ bottom: '8vh',  right: '4vw' }} />
-      <Tag text="encrypted btw"        color="#ffe600" size={24} rotate={11}  style={{ top: '78vh',  right: '8vw' }} />
-      <Tag text="skill issue"          color="#ff1f3a" size={32} rotate={-9}  style={{ top: '4vh',   right: '12vw' }} />
-      <Tag text="no rug pls"           color="#ffe600" size={18} rotate={4}   style={{ top: '88vh',  left: '38vw' }} />
+      <Tag text="chknen nuget"          color="#ffe600" size={42} rotate={-13} style={{ top: '8vh',   left: '4vw' }} />
+      <Tag text="india does not forgive" color="#ff1f3a" size={26} rotate={5}   style={{ top: '32vh', right: '3vw' }} />
+      <Tag text="ZERO TRUST"            color="#ffe600" size={64} rotate={-3}  style={{ bottom: '14vh', left: '5vw' }} />
+      <Tag text="dark forest"           color="#ffe600" size={22} rotate={4}   style={{ top: '64vh', left: '2vw' }} />
+      <Tag text="404: REGRET"           color="#ff1f3a" size={36} rotate={-7}  flicker style={{ top: '2vh',  right: '14vw' }} />
+      <Tag text="post-FHE depression"   color="#ff1f3a" size={20} rotate={6}   style={{ bottom: '6vh', right: '4vw' }} />
+      <Tag text="burn after read"       color="#ffe600" size={26} rotate={11}  style={{ top: '78vh', right: '6vw' }} />
+      <Tag text="air-gapped"            color="#ffe600" size={18} rotate={-4}  style={{ top: '92vh', left: '36vw' }} />
+      <Tag text="signal // noise"       color="#ff1f3a" size={20} rotate={2}   style={{ top: '48vh', left: '4vw' }} />
 
-      <span style={{ position: 'absolute', top: '20vh', right: '6vw', opacity: 0.55, transform: 'rotate(-5deg)' }}>
-        <MiladyEyes size={88} pupilColor="#ff1f3a" />
-      </span>
-      <span style={{ position: 'absolute', bottom: '24vh', left: '3vw', opacity: 0.5, transform: 'rotate(8deg)' }}>
-        <MiladyEyes size={70} />
-      </span>
+      <Milady size={140} opacity={0.45} rotate={-6} tint="white" style={{ top: '18vh', right: '5vw' }} />
     </div>
   );
 }
 
+// Tight popup version (360 × ~600). Three small tags + a tiny Milady tucked
+// into a corner so the wallet UI stays uncrowded.
 export function PopupGraffiti() {
-  // Tight 360×~600 popup — keep decorations to non-essential corners only,
-  // very small font sizes so they don't scream over the actual UI text.
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
-      <Tag text="wagmi"     color="#ffe600" size={14} rotate={-12} style={{ top: 14, right: 90 }} />
-      <Tag text="chknen"    color="#ff1f3a" size={11} rotate={6}   style={{ bottom: 8,  left: 10 }} />
-      <Tag text="encrypted btw" color="#ffe600" size={9} rotate={-4} style={{ bottom: 8, right: 8 }} />
-      <span style={{ position: 'absolute', bottom: 30, right: 12, opacity: 0.45, transform: 'rotate(-6deg)' }}>
-        <MiladyEyes size={36} pupilColor="#ff1f3a" />
-      </span>
+      <Tag text="zero trust"      color="#ffe600" size={13} rotate={-12} style={{ top: 14, right: 90 }} />
+      <Tag text="chknen"          color="#ff1f3a" size={11} rotate={6}   style={{ bottom: 8,  left: 10 }} />
+      <Tag text="encrypted btw"   color="#ffe600" size={10} rotate={-4}  flicker style={{ bottom: 8, right: 8 }} />
+      <Milady size={62} opacity={0.55} rotate={-8} tint="red" style={{ bottom: 28, right: 12 }} />
     </div>
   );
 }

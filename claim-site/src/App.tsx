@@ -11,7 +11,7 @@ function Header({ subtitle }: { subtitle: string }) {
         <Logo size={44} />
         <span className="brand">
           <span className="tag">UNOFFICIAL</span>
-          <span className="strike">OCTRA <span className="small">BRIDGE</span></span>
+          <span className="censored">OCTRA <span className="small">BRIDGE</span></span>
         </span>
       </div>
       <div className="tagline">{subtitle}</div>

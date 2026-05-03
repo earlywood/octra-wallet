@@ -45,9 +45,13 @@ async function makeIcon(size, outPath) {
   const ringR = size / 2 - Math.max(1, Math.round(size * 0.03));
   const innerR = ringR - stroke;
   const maskSize = Math.round(innerR * 2 * 1.12);
-  const maskOffsetX = Math.round((size - maskSize) / 2);
+  // Centering nudges to compensate for the source AC.png art being slightly
+  // off-axis: ~2.5% up to clip the yellow halo at the top, ~1.5% left to
+  // re-center horizontally.
   const verticalNudge = Math.max(1, Math.round(size * 0.025));
-  const maskOffsetY = maskOffsetX - verticalNudge;
+  const horizontalNudge = Math.max(1, Math.round(size * 0.015));
+  const maskOffsetX = Math.round((size - maskSize) / 2) - horizontalNudge;
+  const maskOffsetY = Math.round((size - maskSize) / 2) - verticalNudge;
 
   // Step 1: prepare the mask art — center-crop, scale to maskSize, clip to circle
   const circleMaskSvg = Buffer.from(

@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Permanent Marker';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/PermanentMarker.woff2') format('woff2');
+}
+
 :root {
   --bg: #0a0e14;
   --panel: #11161e;
@@ -59,22 +67,37 @@ label {
 }
 .brand .tag {
   display: inline-block;
+  font-family: "Permanent Marker", "Impact", sans-serif;
   color: var(--tag-yellow);
   background: var(--tag-red);
-  padding: 2px 8px 2px 7px;
-  margin-right: 8px;
+  padding: 4px 10px 2px 9px;
+  margin-right: 10px;
   transform: rotate(-3deg) translateY(-2px);
-  font-size: 18px;
-  letter-spacing: 0.08em;
-  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  font-size: 19px;
+  letter-spacing: 0.04em;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.6);
 }
-.brand .strike {
-  text-decoration: line-through;
-  text-decoration-color: var(--tag-red);
-  text-decoration-thickness: 3px;
-  opacity: 0.85;
+.brand .censored {
+  position: relative;
+  display: inline-block;
+  padding: 0 4px;
 }
-.brand .strike .small { font-size: 0.7em; opacity: 0.85; }
+/* black redaction bar — slightly taller than the x-height, skewed for that
+   hand-drawn marker feel; covers the middle band of OCTRA without fully
+   hiding it. */
+.brand .censored::after {
+  content: "";
+  position: absolute;
+  top: 35%;
+  bottom: 25%;
+  left: -4%;
+  right: -4%;
+  background: #000;
+  transform: skewY(-2deg) translateY(1px);
+  box-shadow: 1px 1px 0 rgba(255, 31, 58, 0.6);
+  pointer-events: none;
+}
+.brand .censored .small { font-size: 0.7em; opacity: 0.85; }
 .tagline { font-size: 13px; color: var(--muted); margin: 0 0 28px 42px; letter-spacing: 0.3px; }
 
 .card {
@@ -151,3 +174,21 @@ a:hover { text-decoration: underline; }
 .wallet-list img { width: 24px; height: 24px; border-radius: 4px; }
 
 code { background: rgba(58,115,255,0.08); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+
+/* graffiti tag font + flicker animation. tags use Permanent Marker as the
+   primary face with Impact as fallback while the woff2 loads. */
+.tag {
+  font-family: "Permanent Marker", "Impact", "Arial Narrow", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  user-select: none;
+  white-space: nowrap;
+  opacity: 0.92;
+}
+@keyframes flicker {
+  0%, 19%, 22%, 26%, 53%, 57%, 100%   { opacity: 0.95; filter: none; }
+  20%, 24%, 55%                       { opacity: 0.45; filter: blur(0.4px); }
+  21%                                 { opacity: 0.7; }
+}
+.tag-flicker { animation: flicker 5s steps(1, end) infinite; }

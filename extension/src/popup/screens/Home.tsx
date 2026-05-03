@@ -50,7 +50,7 @@ export function Home({ address, onLock }: Props) {
         <div className="brand-row">
           <Logo size={26} />
           <div className="brand-text">
-            <div className="brand"><span className="tag">UNOFFICIAL</span><span className="strike">OCTRA</span></div>
+            <div className="brand"><span className="tag">UNOFFICIAL</span><span className="censored">OCTRA</span></div>
             <div
               className={`addr${copied ? ' copied' : ''}`}
               title="click to copy address"
