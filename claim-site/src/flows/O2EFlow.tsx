@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Steps, type StepDef } from '../components/Steps';
 import { WalletPicker } from '../components/WalletPicker';
 import { formatRawAmount } from '../lib/bridge';
-import { findOurMessage, getClaimCalldata, relayerCall } from '../lib/relayer';
+import { fetchRecovery, findOurMessage, getClaimCalldata, relayerCall, type RecoveryDoc } from '../lib/relayer';
 import { pollUntilEpoch, sleep, waitForHeader } from '../lib/flow';
 import { simulateClaim, submitClaim, waitForReceipt, type Eip1193Provider } from '../lib/eth';
 
@@ -32,6 +32,9 @@ export function O2EFlow({ params }: { params: O2EParams }) {
   const [lockStartedAt] = useState<number>(() => Date.now());
   const [headerStartedAt, setHeaderStartedAt] = useState<number | null>(null);
   const [relayerLatest, setRelayerLatest] = useState<number | null>(null);
+  const [recoveryScanned, setRecoveryScanned] = useState<number | null>(null);
+  const [recoveryLastTry, setRecoveryLastTry] = useState<number | null>(null);
+  const [recoveryLastOk, setRecoveryLastOk] = useState<boolean | null>(null);
   const [, setTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -43,22 +46,43 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     return () => clearInterval(t);
   }, [isTimedActive]);
 
-  // Diagnostic: while waiting on the relayer, fetch its latest finalized
-  // epoch every 30s so we can show the user how far behind it is. If their
-  // lock's epoch is past the relayer's latest, the relayer literally cannot
-  // publish yet — that's not stuck, it's working as designed.
+  // Diagnostic polls while waiting on the relayer:
+  //   bridgeStatus  → latest_finalized_epoch (octra's finalization frontier)
+  //   recovery.json → latest_scanned_epoch + last-fetch ok/timestamp
+  // Both show up in the diagnostic panel below the steps so the user can see
+  // what's actually happening instead of staring at a generic "waiting…".
   useEffect(() => {
     if (phase !== 'wait_header') return;
-    const fetchStatus = async () => {
-      const r = await relayerCall<{ latest_finalized_epoch?: number }>(params.relayerUrl, 'bridgeStatus');
-      if (r.ok && r.result?.latest_finalized_epoch != null) {
-        setRelayerLatest(r.result.latest_finalized_epoch);
+    const fetchAll = async () => {
+      relayerCall<{ latest_finalized_epoch?: number }>(params.relayerUrl, 'bridgeStatus').then((r) => {
+        if (r.ok && r.result?.latest_finalized_epoch != null) setRelayerLatest(r.result.latest_finalized_epoch);
+      });
+      setRecoveryLastTry(Date.now());
+      const doc: RecoveryDoc | null = await fetchRecovery(params.relayerUrl);
+      setRecoveryLastOk(doc != null);
+      if (doc) {
+        setRecoveryScanned(doc.latest_scanned_epoch);
+        const list = doc.by_recipient?.[params.recipient.toLowerCase()];
+        const hit = Array.isArray(list) && list.some((e) => (e.tx_hash || '').toLowerCase() === params.lockTx.toLowerCase());
+        console.info('[octra-bridge] recovery poll', {
+          relayer: params.relayerUrl,
+          our_recipient: params.recipient.toLowerCase(),
+          our_tx: params.lockTx.toLowerCase(),
+          our_epoch: epoch,
+          relayer_scanned: doc.latest_scanned_epoch,
+          recipients_in_doc: Object.keys(doc.by_recipient ?? {}).length,
+          our_recipient_present: Array.isArray(list),
+          our_entries: Array.isArray(list) ? list.length : 0,
+          our_tx_found: hit,
+        });
+      } else {
+        console.warn('[octra-bridge] recovery poll: fetch failed (likely CORS or network)');
       }
     };
-    fetchStatus();
-    const t = setInterval(fetchStatus, 30_000);
+    fetchAll();
+    const t = setInterval(fetchAll, 15_000);
     return () => clearInterval(t);
-  }, [phase, params.relayerUrl]);
+  }, [phase, params.relayerUrl, params.recipient, params.lockTx, epoch]);
 
   useEffect(() => {
     drive();
@@ -244,9 +268,47 @@ export function O2EFlow({ params }: { params: O2EParams }) {
       <div className="card">
         <Steps steps={steps} />
         {statusMsg && <div className="callout info">{statusMsg}</div>}
+
+        {phase === 'wait_header' && epoch != null && (
+          <div className="callout" style={{ marginTop: 10, fontSize: 11.5 }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: 0.4, marginBottom: 6, textTransform: 'uppercase' }}>diagnostic</div>
+            <div className="kv" style={{ padding: 0, fontSize: 11.5 }}>
+              <span className="k">your lock epoch</span><span className="v">{epoch}</span>
+            </div>
+            {relayerLatest != null && (
+              <div className="kv" style={{ padding: 0, fontSize: 11.5 }}>
+                <span className="k">relayer finalized to</span>
+                <span className="v" style={{ color: relayerLatest < epoch ? 'var(--warn)' : 'var(--ok)' }}>
+                  {relayerLatest} ({relayerLatest >= epoch ? `+${relayerLatest - epoch}` : relayerLatest - epoch})
+                </span>
+              </div>
+            )}
+            {recoveryScanned != null && (
+              <div className="kv" style={{ padding: 0, fontSize: 11.5 }}>
+                <span className="k">recovery.json scanned to</span>
+                <span className="v" style={{ color: recoveryScanned < epoch ? 'var(--warn)' : 'var(--ok)' }}>
+                  {recoveryScanned} ({recoveryScanned >= epoch ? `+${recoveryScanned - epoch}` : recoveryScanned - epoch})
+                </span>
+              </div>
+            )}
+            {recoveryLastTry != null && (
+              <div className="kv" style={{ padding: 0, fontSize: 11.5 }}>
+                <span className="k">last recovery poll</span>
+                <span className="v" style={{ color: recoveryLastOk === false ? 'var(--err)' : undefined }}>
+                  {recoveryLastOk == null ? '—' : recoveryLastOk ? 'ok' : 'failed (likely CORS)'} · {Math.max(0, Math.floor((Date.now() - recoveryLastTry) / 1000))}s ago
+                </span>
+              </div>
+            )}
+            {recoveryScanned != null && recoveryScanned < epoch && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                relayer hasn't reached your epoch yet. it processes ~15 epochs/min — eta ~{Math.ceil((epoch - recoveryScanned) / 15)} min.
+              </div>
+            )}
+          </div>
+        )}
+
         {phase === 'wait_header' && headerStartedAt && (Date.now() - headerStartedAt) > 3 * 60_000 && (
           <div className="callout info" style={{ marginTop: 10, fontSize: 12 }}>
-            taking longer than usual. the relayer is third-party — sometimes it lags.{' '}
             <strong>you can close this tab any time</strong> — your OCT lock is safe on-chain, and the wallet popup's <em>resume</em> button on this entry will pick the claim up from exactly where it left off.
           </div>
         )}
