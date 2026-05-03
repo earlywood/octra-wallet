@@ -42,8 +42,16 @@ export async function getOctraBalanceRaw(rpcUrl: string, addr: string): Promise<
   return 0n;
 }
 
-export async function getOctraTxEpoch(rpcUrl: string, hash: string): Promise<number | null> {
-  const r = await octraRpcCall<{ epoch?: number }>(rpcUrl, 'octra_transaction', [hash], 10_000);
+export interface OctraTxStatus {
+  status?: string;     // 'rejected' for reverted; absent / 'confirmed' / 'staged' for in-flight or successful
+  epoch?: number;      // set on both rejected AND successful txs — DO NOT use as a success signal alone
+  source?: string;     // 'rejected_txs' is a clear rejection signal
+  error?: { type?: string; reason?: string };
+  tx_hash?: string;
+}
+
+export async function getOctraTxStatus(rpcUrl: string, hash: string): Promise<OctraTxStatus | null> {
+  const r = await octraRpcCall<OctraTxStatus>(rpcUrl, 'octra_transaction', [hash], 10_000);
   if (!r.ok || !r.result) return null;
-  return r.result.epoch ?? null;
+  return r.result;
 }

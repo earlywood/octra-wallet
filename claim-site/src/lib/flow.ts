@@ -1,12 +1,29 @@
-import { getOctraTxEpoch } from './octraRpc';
+import { getOctraTxStatus } from './octraRpc';
 import { relayerCall, type BridgeHeaderResult } from './relayer';
+
+export class LockRejectedError extends Error {
+  reason: string;
+  constructor(reason: string) {
+    super(`lock reverted on octra: ${reason}`);
+    this.name = 'LockRejectedError';
+    this.reason = reason;
+  }
+}
 
 export async function pollUntilEpoch(rpcUrl: string, txHash: string, signal: AbortSignal, intervalMs = 4000, timeoutMs = 5 * 60_000): Promise<number> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (signal.aborted) throw new Error('aborted');
-    const epoch = await getOctraTxEpoch(rpcUrl, txHash);
-    if (epoch != null) return epoch;
+    const tx = await getOctraTxStatus(rpcUrl, txHash);
+    if (tx) {
+      // octra sets epoch on rejected txs too, so we can't use it as a
+      // success signal in isolation. check status / source first.
+      if (tx.status === 'rejected' || tx.source === 'rejected_txs') {
+        const reason = tx.error?.reason ?? tx.error?.type ?? 'unknown — see octrascan';
+        throw new LockRejectedError(reason);
+      }
+      if (tx.epoch != null) return tx.epoch;
+    }
     await sleep(intervalMs, signal);
   }
   throw new Error('lock tx not finalized within 5min');

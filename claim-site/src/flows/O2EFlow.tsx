@@ -132,17 +132,32 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     return `${elapsed}s elapsed${suffix} (typical ${etaSec}s)`;
   }
 
-  const lockStatus    = epoch != null ? 'done' : phase === 'wait_lock' ? 'active' : 'pending';
-  const headerStatus  = calldata ? 'done' : phase === 'wait_header' ? 'active' : phase === 'failed' && !epoch ? 'pending' : 'pending';
+  // failure attribution: figure out which step the failure landed on so we can
+  // mark *that* step red and leave the others 'pending' (vs. the old behavior
+  // which marked the lock 'done' when it had actually reverted on octra).
+  const failedAtLock   = phase === 'failed' && epoch == null;
+  const failedAtHeader = phase === 'failed' && epoch != null && !calldata;
+  const failedAtClaim  = phase === 'failed' && !!calldata;
+
+  const lockStatus    = epoch != null ? 'done'
+                      : failedAtLock  ? 'failed'
+                      : phase === 'wait_lock' ? 'active' : 'pending';
+  const headerStatus  = calldata ? 'done'
+                      : failedAtHeader ? 'failed'
+                      : phase === 'wait_header' ? 'active' : 'pending';
   const connectStatus = ethAddr ? 'done' : phase === 'connect' ? 'active' : 'pending';
   const claimStatus   = phase === 'done' ? 'done'
-                      : phase === 'failed' ? 'failed'
+                      : failedAtClaim ? 'failed'
                       : phase === 'sim' || phase === 'submit' || phase === 'wait_claim' ? 'active'
                       : 'pending';
 
-  const lockNote   = lockStatus    === 'active' ? elapsedNote(lockStartedAt, LOCK_ETA) : undefined;
-  const headerNote = headerStatus  === 'active' ? elapsedNote(headerStartedAt, HEADER_ETA) : undefined;
-  const claimNote  = claimStatus   === 'active'
+  const lockNote   = lockStatus === 'failed' ? (err ?? 'reverted on-chain — see below')
+                   : lockStatus === 'active' ? elapsedNote(lockStartedAt, LOCK_ETA)
+                   : undefined;
+  const headerNote = headerStatus === 'failed' ? 'header never published'
+                   : headerStatus === 'active' ? elapsedNote(headerStartedAt, HEADER_ETA)
+                   : undefined;
+  const claimNote  = claimStatus === 'active'
                        ? phase === 'sim'        ? 'verifying with ethereum…'
                        : phase === 'submit'     ? 'confirm in your wallet'
                        : phase === 'wait_claim' ? `confirming on ethereum · ${elapsedNote(claimSentAt, CLAIM_ETA)}`
