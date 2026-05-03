@@ -12,7 +12,17 @@ export type Msg =
   | { kind: 'GET_SETTINGS' }
   | { kind: 'SAVE_SETTINGS'; settings: Partial<{ rpcUrl: string; relayerUrl: string; explorerUrl: string; ethRpcUrl: string; claimUrl: string }> }
   | { kind: 'EXPORT_VAULT'; pin: string }
-  | { kind: 'WIPE_VAULT' };
+  | { kind: 'WIPE_VAULT' }
+  // multi-account ops (vault must be unlocked)
+  | { kind: 'LIST_ACCOUNTS' }
+  | { kind: 'SET_ACTIVE_ACCOUNT'; id: string }
+  | { kind: 'ADD_ACCOUNT_GENERATED'; label?: string }
+  | { kind: 'ADD_ACCOUNT_MNEMONIC'; mnemonic: string; label?: string }
+  | { kind: 'ADD_ACCOUNT_PRIVKEY'; privB64: string; label?: string }
+  | { kind: 'RENAME_ACCOUNT'; id: string; label: string }
+  | { kind: 'REMOVE_ACCOUNT'; id: string; pin: string }
+  | { kind: 'EXPORT_PRIVATE_KEY'; id: string; pin: string }
+  | { kind: 'EXPORT_MNEMONIC'; id: string; pin: string };
 
 export interface Reply<T = unknown> { ok: true; data: T }
 export interface ReplyErr { ok: false; error: string }

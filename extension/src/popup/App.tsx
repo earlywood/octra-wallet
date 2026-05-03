@@ -5,10 +5,13 @@ import { Unlock } from './screens/Unlock';
 import { Home } from './screens/Home';
 import { PopupGraffiti } from './Graffiti';
 
+interface AccountSummary { id: string; label: string; address: string }
 interface Status {
   hasVault: boolean;
   isUnlocked: boolean;
   address: string | null;
+  activeAccount: AccountSummary | null;
+  accounts: AccountSummary[];
 }
 
 export function App() {
@@ -26,7 +29,8 @@ export function App() {
   let inner;
   if (!status.hasVault) inner = <Onboarding onDone={refresh} />;
   else if (!status.isUnlocked) inner = <Unlock onUnlock={refresh} />;
-  else inner = <Home address={status.address!} onLock={refresh} />;
+  else if (!status.activeAccount) inner = <div className="app"><div className="content">no active account…</div></div>;
+  else inner = <Home active={status.activeAccount} accounts={status.accounts} onLock={refresh} onAccountChanged={refresh} />;
 
   return (
     <>

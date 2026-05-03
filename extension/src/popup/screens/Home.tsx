@@ -5,15 +5,22 @@ import { Send } from './Send';
 import { Receive } from './Receive';
 import { Bridge } from './Bridge';
 import { Settings } from './Settings';
-import { Logo } from '../Logo';
+import { AddAccount } from './AddAccount';
+import { AccountSwitcher, type AccountSummary } from '../AccountSwitcher';
 
-interface Props { address: string; onLock: () => void; }
+interface Props {
+  active: AccountSummary;
+  accounts: AccountSummary[];
+  onLock: () => void;
+  onAccountChanged: () => void;
+}
 
-type Tab = 'home' | 'send' | 'receive' | 'bridge' | 'settings';
+type Tab = 'home' | 'send' | 'receive' | 'bridge' | 'settings' | 'add-account';
 
 function shortAddr(a: string) { return a.slice(0, 8) + '…' + a.slice(-6); }
 
-export function Home({ address, onLock }: Props) {
+export function Home({ active, accounts, onLock, onAccountChanged }: Props) {
+  const address = active.address;
   const [tab, setTab] = useState<Tab>('home');
   const [balance, setBalance] = useState<string | null>(null);
   const [nonce, setNonce] = useState<number | null>(null);
@@ -37,7 +44,13 @@ export function Home({ address, onLock }: Props) {
     setNonce(r.data.nonce);
   }
 
-  useEffect(() => { loadBalance(); }, []);
+  // re-fetch when the active account changes
+  useEffect(() => {
+    setBalance(null);
+    setNonce(null);
+    loadBalance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active.id]);
 
   async function lock() {
     await send({ kind: 'LOCK' });
@@ -48,18 +61,28 @@ export function Home({ address, onLock }: Props) {
     <div className="app">
       <div className="topbar">
         <div className="brand-row">
-          <Logo size={26} />
+          <AccountSwitcher
+            active={active}
+            accounts={accounts}
+            onSwitched={onAccountChanged}
+            onAdd={() => setTab('add-account')}
+          />
           <div className="brand-text">
             <div className="brand"><span className="tag">UNOFFICIAL</span><span className="censored">OCTRA</span></div>
-            <div
-              className={`addr${copied ? ' copied' : ''}`}
-              title="click to copy address"
-              onClick={copyAddr}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && copyAddr()}
-            >
-              {copied ? 'copied!' : shortAddr(address)}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontSize: 10.5, color: 'var(--text)', fontWeight: 500, maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {active.label}
+              </span>
+              <span
+                className={`addr${copied ? ' copied' : ''}`}
+                title="click to copy address"
+                onClick={copyAddr}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && copyAddr()}
+              >
+                {copied ? 'copied!' : shortAddr(address)}
+              </span>
             </div>
           </div>
         </div>
@@ -92,7 +115,13 @@ export function Home({ address, onLock }: Props) {
         {tab === 'send' && <Send onDone={() => { setTab('home'); loadBalance(); }} />}
         {tab === 'receive' && <Receive address={address} />}
         {tab === 'bridge' && <Bridge address={address} balanceRaw={balance} onLockDone={loadBalance} />}
-        {tab === 'settings' && <Settings />}
+        {tab === 'settings' && <Settings onAccountsChanged={onAccountChanged} />}
+        {tab === 'add-account' && (
+          <AddAccount
+            onDone={() => { setTab('home'); onAccountChanged(); }}
+            onCancel={() => setTab('home')}
+          />
+        )}
       </div>
     </div>
   );

@@ -9,22 +9,54 @@ import {
   keypairFromPrivateKeyB64,
 } from './crypto';
 
-const VAULT_KEY = 'octra:vault:v1';
+const VAULT_KEY_V1 = 'octra:vault:v1';      // legacy single-account vault
+const VAULT_KEY    = 'octra:vault:v2';      // current multi-account vault
 const SETTINGS_KEY = 'octra:settings:v1';
-const SESSION_KEY = 'octra:session:v1';
+const SESSION_KEY  = 'octra:session:v2';
 
-export interface VaultPlaintext {
+// ---------------- public types ----------------
+
+export type AccountSource = 'generated' | 'imported-mnemonic' | 'imported-priv';
+
+export interface AccountInVault {
+  id: string;
+  label: string;
   address: string;
   publicKeyB64: string;
   privSeed32B64: string;
+  source: AccountSource;
+  /** present iff this account was derived from a 12+ word mnemonic */
   mnemonic?: string;
+  /** if generated from the vault's hdMaster, the index used */
   hdIndex?: number;
-  hdVersion?: 1 | 2;
+  createdAt: number;
+}
+
+/** Public-safe view (no private material) — what the popup UI sees. */
+export interface AccountPublic {
+  id: string;
+  label: string;
+  address: string;
+  source: AccountSource;
+  hdIndex?: number;
+  /** true if a mnemonic export is possible (account has its own mnemonic) */
+  hasMnemonic: boolean;
+  createdAt: number;
+}
+
+export interface VaultPlaintextV2 {
+  version: 2;
+  accounts: AccountInVault[];
+  activeAccountId: string;
+  /** master mnemonic + next free HD index, used by 'generate new account' so
+   *  every HD-derived account is recoverable from this single seed */
+  hdMaster?: { mnemonic: string; nextHdIndex: number };
 }
 
 export interface VaultBlob {
   ciphertextB64: string;
-  address: string;
+  /** non-sensitive surfacing for UI: how many accounts are inside */
+  accountCount: number;
   createdAt: number;
 }
 
@@ -36,14 +68,16 @@ export interface Settings {
   claimUrl: string;
 }
 
-// Both rpcUrl and relayerUrl point at the SAME cloudflare worker. The worker
-// routes per request based on the JSON-RPC method in the body: bridge* → relayer
-// upstream, everything else → octra RPC upstream. Dual purpose:
-//   1. dedupe the upstream relayer's malformed CORS headers (browsers reject
-//      duplicates, curl doesn't — see relayer-proxy/README.md)
-//   2. bypass octra's geo-IP block by giving end users a single proxy host
-//      they can reach (workers.dev is globally accessible) regardless of
-//      whether their region has direct access to octra.network or the relayer.
+export interface UnlockedSession {
+  /** kept in session memory so re-encrypts on add/remove/rename don't need
+   *  to re-prompt for the PIN. session storage clears on browser restart. */
+  pin: string;
+  accounts: Record<string, { address: string; publicKeyB64: string; privSeed32B64: string }>;
+  activeAccountId: string;
+}
+
+// ---------------- defaults / settings ----------------
+
 const DEFAULTS: Settings = {
   rpcUrl: 'https://octra-relay.salamistroker.workers.dev',
   relayerUrl: 'https://octra-relay.salamistroker.workers.dev',
@@ -56,20 +90,14 @@ export async function getSettings(): Promise<Settings> {
   const r = await chrome.storage.local.get(SETTINGS_KEY);
   const merged = { ...DEFAULTS, ...(r[SETTINGS_KEY] ?? {}) };
   let migrated = false;
-  // earlier dev defaults that need upgrading in place:
   if (merged.ethRpcUrl === 'https://eth.llamarpc.com') {
     merged.ethRpcUrl = 'https://ethereum-rpc.publicnode.com';
     migrated = true;
   }
-  // rpcUrl: upgrade direct-octra-network users to the proxy worker (geo-block
-  // bypass + same proxy that handles the relayer). recognise both the old
-  // bare-host form ('https://octra.network') AND the path form
-  // ('https://octra.network/rpc') since both have shipped at different times.
   if (merged.rpcUrl === 'https://octra.network' || merged.rpcUrl === 'https://octra.network/rpc') {
     merged.rpcUrl = 'https://octra-relay.salamistroker.workers.dev';
     migrated = true;
   }
-  // relayer: upgrade users from the broken-CORS upstream URL to our worker proxy
   if (merged.relayerUrl === 'https://relayer-002838819188.octra.network') {
     merged.relayerUrl = 'https://octra-relay.salamistroker.workers.dev';
     migrated = true;
@@ -85,34 +113,35 @@ export async function saveSettings(s: Partial<Settings>): Promise<Settings> {
   return merged;
 }
 
+// ---------------- vault read/write ----------------
+
 export async function readVault(): Promise<VaultBlob | null> {
   const r = await chrome.storage.local.get(VAULT_KEY);
   return (r[VAULT_KEY] as VaultBlob) ?? null;
 }
 
 export async function hasVault(): Promise<boolean> {
-  return (await readVault()) != null;
+  if ((await readVault()) != null) return true;
+  // also detect v1 vaults that haven't been migrated yet
+  const r = await chrome.storage.local.get(VAULT_KEY_V1);
+  return r[VAULT_KEY_V1] != null;
 }
 
-async function writeVault(plain: VaultPlaintext, pin: string): Promise<VaultBlob> {
+async function writeVaultV2(plain: VaultPlaintextV2, pin: string): Promise<VaultBlob> {
   const ct = await aesGcmEncrypt(JSON.stringify(plain), pin);
-  const blob: VaultBlob = { ciphertextB64: ct, address: plain.address, createdAt: Date.now() };
+  const blob: VaultBlob = { ciphertextB64: ct, accountCount: plain.accounts.length, createdAt: Date.now() };
   await chrome.storage.local.set({ [VAULT_KEY]: blob });
   return blob;
 }
 
 export async function destroyVault(): Promise<void> {
-  await chrome.storage.local.remove(VAULT_KEY);
+  await chrome.storage.local.remove([VAULT_KEY, VAULT_KEY_V1]);
   await chrome.storage.session.remove(SESSION_KEY);
 }
 
-export interface UnlockedSession {
-  address: string;
-  publicKeyB64: string;
-  privSeed32B64: string;
-}
+// ---------------- session ----------------
 
-export async function setSession(s: UnlockedSession | null): Promise<void> {
+async function setSession(s: UnlockedSession | null): Promise<void> {
   if (s == null) await chrome.storage.session.remove(SESSION_KEY);
   else await chrome.storage.session.set({ [SESSION_KEY]: s });
 }
@@ -122,73 +151,390 @@ export async function getSession(): Promise<UnlockedSession | null> {
   return (r[SESSION_KEY] as UnlockedSession) ?? null;
 }
 
-export async function unlockVault(pin: string): Promise<UnlockedSession> {
-  const blob = await readVault();
-  if (!blob) throw new Error('no wallet');
-  let plain: VaultPlaintext;
-  try {
-    const json = await aesGcmDecrypt(blob.ciphertextB64, pin);
-    plain = JSON.parse(json);
-  } catch {
-    throw new Error('wrong PIN');
-  }
-  const session: UnlockedSession = {
-    address: plain.address,
-    publicKeyB64: plain.publicKeyB64,
-    privSeed32B64: plain.privSeed32B64,
-  };
-  await setSession(session);
-  return session;
-}
-
 export async function lockVault(): Promise<void> {
   await setSession(null);
 }
 
-export async function createNewWallet(pin: string): Promise<{ address: string; mnemonic: string }> {
-  if ((await hasVault())) throw new Error('vault already exists');
+// ---------------- v1 → v2 migration ----------------
+
+interface V1Plain {
+  address: string;
+  publicKeyB64: string;
+  privSeed32B64: string;
+  mnemonic?: string;
+  hdIndex?: number;
+  hdVersion?: 1 | 2;
+}
+
+interface V1Blob {
+  ciphertextB64: string;
+  address: string;
+  createdAt: number;
+}
+
+async function readV1Blob(): Promise<V1Blob | null> {
+  const r = await chrome.storage.local.get(VAULT_KEY_V1);
+  return (r[VAULT_KEY_V1] as V1Blob) ?? null;
+}
+
+/** If a v1 vault exists, decrypt with `pin`, convert to v2, write v2, drop v1.
+ *  Returns the v2 plaintext after conversion. */
+async function migrateV1ToV2(pin: string): Promise<VaultPlaintextV2 | null> {
+  const v1 = await readV1Blob();
+  if (!v1) return null;
+  let plain: V1Plain;
+  try {
+    plain = JSON.parse(await aesGcmDecrypt(v1.ciphertextB64, pin));
+  } catch {
+    throw new Error('wrong PIN');
+  }
+  const id = newAccountId();
+  const account: AccountInVault = {
+    id,
+    label: 'Account 1',
+    address: plain.address,
+    publicKeyB64: plain.publicKeyB64,
+    privSeed32B64: plain.privSeed32B64,
+    source: plain.mnemonic ? 'generated' : 'imported-priv',
+    mnemonic: plain.mnemonic,
+    hdIndex: plain.hdIndex,
+    createdAt: v1.createdAt,
+  };
+  const v2: VaultPlaintextV2 = {
+    version: 2,
+    accounts: [account],
+    activeAccountId: id,
+    // if v1 had a mnemonic at hdIndex 0, retain it as the master for future
+    // 'generate' calls. nextHdIndex starts at the v1 hdIndex + 1.
+    hdMaster: plain.mnemonic ? { mnemonic: plain.mnemonic, nextHdIndex: (plain.hdIndex ?? 0) + 1 } : undefined,
+  };
+  await writeVaultV2(v2, pin);
+  await chrome.storage.local.remove(VAULT_KEY_V1);
+  return v2;
+}
+
+// ---------------- unlock / change pin ----------------
+
+async function decryptVault(pin: string): Promise<VaultPlaintextV2> {
+  const blob = await readVault();
+  if (blob) {
+    let json: string;
+    try { json = await aesGcmDecrypt(blob.ciphertextB64, pin); }
+    catch { throw new Error('wrong PIN'); }
+    return JSON.parse(json) as VaultPlaintextV2;
+  }
+  // try v1 → v2 migration
+  const migrated = await migrateV1ToV2(pin);
+  if (migrated) return migrated;
+  throw new Error('no wallet');
+}
+
+function plainToSession(plain: VaultPlaintextV2, pin: string): UnlockedSession {
+  const accounts: UnlockedSession['accounts'] = {};
+  for (const a of plain.accounts) {
+    accounts[a.id] = { address: a.address, publicKeyB64: a.publicKeyB64, privSeed32B64: a.privSeed32B64 };
+  }
+  return { pin, accounts, activeAccountId: plain.activeAccountId };
+}
+
+export async function unlockVault(pin: string): Promise<{ activeAccount: AccountPublic; accounts: AccountPublic[] }> {
+  const plain = await decryptVault(pin);
+  const session = plainToSession(plain, pin);
+  await setSession(session);
+  return {
+    activeAccount: toPublic(plain.accounts.find((a) => a.id === plain.activeAccountId)!),
+    accounts: plain.accounts.map(toPublic),
+  };
+}
+
+// ---------------- account ops (require unlocked session) ----------------
+
+async function requireSession(): Promise<UnlockedSession> {
+  const s = await getSession();
+  if (!s) throw new Error('locked');
+  return s;
+}
+
+async function readPlainViaSession(): Promise<{ plain: VaultPlaintextV2; pin: string }> {
+  const session = await requireSession();
+  const plain = await decryptVault(session.pin);
+  return { plain, pin: session.pin };
+}
+
+function toPublic(a: AccountInVault): AccountPublic {
+  return {
+    id: a.id,
+    label: a.label,
+    address: a.address,
+    source: a.source,
+    hdIndex: a.hdIndex,
+    hasMnemonic: !!a.mnemonic,
+    createdAt: a.createdAt,
+  };
+}
+
+export async function listAccountsPublic(): Promise<{ accounts: AccountPublic[]; activeAccountId: string }> {
+  const { plain } = await readPlainViaSession();
+  return { accounts: plain.accounts.map(toPublic), activeAccountId: plain.activeAccountId };
+}
+
+export async function getActiveAccountSeed(): Promise<{ address: string; publicKeyB64: string; privSeed32B64: string }> {
+  const session = await requireSession();
+  const seed = session.accounts[session.activeAccountId];
+  if (!seed) throw new Error('active account not found in session');
+  return seed;
+}
+
+export async function getActiveAccountAddress(): Promise<string> {
+  return (await getActiveAccountSeed()).address;
+}
+
+export async function setActiveAccount(id: string): Promise<AccountPublic> {
+  const { plain, pin } = await readPlainViaSession();
+  if (!plain.accounts.find((a) => a.id === id)) throw new Error('account not found');
+  plain.activeAccountId = id;
+  await writeVaultV2(plain, pin);
+  await setSession(plainToSession(plain, pin));
+  return toPublic(plain.accounts.find((a) => a.id === id)!);
+}
+
+export async function renameAccount(id: string, label: string): Promise<AccountPublic> {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error('label cannot be empty');
+  if (trimmed.length > 40) throw new Error('label too long (max 40 chars)');
+  const { plain, pin } = await readPlainViaSession();
+  const acc = plain.accounts.find((a) => a.id === id);
+  if (!acc) throw new Error('account not found');
+  acc.label = trimmed;
+  await writeVaultV2(plain, pin);
+  return toPublic(acc);
+}
+
+export async function removeAccount(id: string, confirmPin: string): Promise<{ accounts: AccountPublic[]; activeAccountId: string }> {
+  const session = await requireSession();
+  if (confirmPin !== session.pin) throw new Error('wrong PIN');
+  const plain = await decryptVault(session.pin);
+  if (plain.accounts.length <= 1) throw new Error('cannot remove the last account');
+  const idx = plain.accounts.findIndex((a) => a.id === id);
+  if (idx < 0) throw new Error('account not found');
+  plain.accounts.splice(idx, 1);
+  if (plain.activeAccountId === id) plain.activeAccountId = plain.accounts[0].id;
+  await writeVaultV2(plain, session.pin);
+  await setSession(plainToSession(plain, session.pin));
+  return { accounts: plain.accounts.map(toPublic), activeAccountId: plain.activeAccountId };
+}
+
+export async function exportPrivateKey(id: string, confirmPin: string): Promise<{ privSeed32B64: string }> {
+  const session = await requireSession();
+  if (confirmPin !== session.pin) throw new Error('wrong PIN');
+  const seed = session.accounts[id];
+  if (!seed) throw new Error('account not found');
+  return { privSeed32B64: seed.privSeed32B64 };
+}
+
+export async function exportMnemonic(id: string, confirmPin: string): Promise<{ mnemonic: string }> {
+  const session = await requireSession();
+  if (confirmPin !== session.pin) throw new Error('wrong PIN');
+  const plain = await decryptVault(session.pin);
+  const acc = plain.accounts.find((a) => a.id === id);
+  if (!acc) throw new Error('account not found');
+  if (!acc.mnemonic) throw new Error('this account was imported by private key — no mnemonic stored');
+  return { mnemonic: acc.mnemonic };
+}
+
+// ---------------- creating accounts ----------------
+
+function newAccountId(): string {
+  // 12-char base32-ish id, plenty of entropy for our small set
+  const buf = new Uint8Array(8);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (b) => b.toString(36).padStart(2, '0')).join('');
+}
+
+function nextDefaultLabel(plain: VaultPlaintextV2): string {
+  // 'Account N' where N is the smallest positive integer not already used
+  const used = new Set<number>();
+  for (const a of plain.accounts) {
+    const m = /^Account (\d+)$/.exec(a.label);
+    if (m) used.add(parseInt(m[1], 10));
+  }
+  let n = 1;
+  while (used.has(n)) n++;
+  return `Account ${n}`;
+}
+
+/** Initial vault creation — only for the first-ever wallet (when nothing exists). */
+export async function createInitialWallet(pin: string): Promise<{ address: string; mnemonic: string }> {
+  if (await hasVault()) throw new Error('vault already exists');
   const mnemonic = generateMnemonic12();
   const kp = keypairFromMnemonic(mnemonic, 0, 2);
-  const plain: VaultPlaintext = {
-    address: kp.address,
-    publicKeyB64: bytesToBase64(kp.publicKey),
-    privSeed32B64: bytesToBase64(kp.privateKey),
-    mnemonic,
-    hdIndex: 0,
-    hdVersion: 2,
+  const id = newAccountId();
+  const plain: VaultPlaintextV2 = {
+    version: 2,
+    accounts: [{
+      id,
+      label: 'Account 1',
+      address: kp.address,
+      publicKeyB64: bytesToBase64(kp.publicKey),
+      privSeed32B64: bytesToBase64(kp.privateKey),
+      source: 'generated',
+      mnemonic,
+      hdIndex: 0,
+      createdAt: Date.now(),
+    }],
+    activeAccountId: id,
+    hdMaster: { mnemonic, nextHdIndex: 1 },
   };
-  await writeVault(plain, pin);
+  await writeVaultV2(plain, pin);
+  await setSession(plainToSession(plain, pin));
   return { address: kp.address, mnemonic };
 }
 
-export async function importFromMnemonic(mnemonic: string, pin: string, hdVersion: 1 | 2 = 2): Promise<{ address: string }> {
+export async function importInitialFromMnemonic(mnemonic: string, pin: string, hdVersion: 1 | 2 = 2): Promise<{ address: string }> {
   if (!isValidMnemonic(mnemonic)) throw new Error('invalid mnemonic');
-  if ((await hasVault())) throw new Error('vault already exists');
+  if (await hasVault()) throw new Error('vault already exists');
   const kp = keypairFromMnemonic(mnemonic, 0, hdVersion);
-  const plain: VaultPlaintext = {
+  const id = newAccountId();
+  const plain: VaultPlaintextV2 = {
+    version: 2,
+    accounts: [{
+      id,
+      label: 'Account 1',
+      address: kp.address,
+      publicKeyB64: bytesToBase64(kp.publicKey),
+      privSeed32B64: bytesToBase64(kp.privateKey),
+      source: 'generated',
+      mnemonic,
+      hdIndex: 0,
+      createdAt: Date.now(),
+    }],
+    activeAccountId: id,
+    hdMaster: { mnemonic, nextHdIndex: 1 },
+  };
+  await writeVaultV2(plain, pin);
+  await setSession(plainToSession(plain, pin));
+  return { address: kp.address };
+}
+
+export async function importInitialFromPrivateKey(privB64: string, pin: string): Promise<{ address: string }> {
+  if (await hasVault()) throw new Error('vault already exists');
+  const kp = keypairFromPrivateKeyB64(privB64.trim());
+  const id = newAccountId();
+  const plain: VaultPlaintextV2 = {
+    version: 2,
+    accounts: [{
+      id,
+      label: 'Account 1',
+      address: kp.address,
+      publicKeyB64: bytesToBase64(kp.publicKey),
+      privSeed32B64: bytesToBase64(kp.privateKey),
+      source: 'imported-priv',
+      createdAt: Date.now(),
+    }],
+    activeAccountId: id,
+  };
+  await writeVaultV2(plain, pin);
+  await setSession(plainToSession(plain, pin));
+  return { address: kp.address };
+}
+
+/** Generate next HD-derived account from the vault's existing master mnemonic.
+ *  If no master exists (e.g. wallet was bootstrapped by importing a single
+ *  private key), we generate a fresh mnemonic and store it on this account. */
+export async function addGeneratedAccount(label?: string): Promise<{ account: AccountPublic; mnemonic?: string }> {
+  const { plain, pin } = await readPlainViaSession();
+  let mnemonic: string;
+  let hdIndex: number;
+  let returnedMnemonic: string | undefined;
+  if (plain.hdMaster) {
+    mnemonic = plain.hdMaster.mnemonic;
+    hdIndex = plain.hdMaster.nextHdIndex;
+    plain.hdMaster.nextHdIndex++;
+  } else {
+    // no master — bootstrap one with this account
+    mnemonic = generateMnemonic12();
+    hdIndex = 0;
+    plain.hdMaster = { mnemonic, nextHdIndex: 1 };
+    returnedMnemonic = mnemonic;
+  }
+  const kp = keypairFromMnemonic(mnemonic, hdIndex, 2);
+  if (plain.accounts.some((a) => a.address === kp.address)) {
+    throw new Error('this account already exists in your wallet');
+  }
+  const id = newAccountId();
+  const acc: AccountInVault = {
+    id,
+    label: label ?? nextDefaultLabel(plain),
     address: kp.address,
     publicKeyB64: bytesToBase64(kp.publicKey),
     privSeed32B64: bytesToBase64(kp.privateKey),
+    source: 'generated',
+    mnemonic,
+    hdIndex,
+    createdAt: Date.now(),
+  };
+  plain.accounts.push(acc);
+  plain.activeAccountId = id;
+  await writeVaultV2(plain, pin);
+  await setSession(plainToSession(plain, pin));
+  return { account: toPublic(acc), mnemonic: returnedMnemonic };
+}
+
+export async function addImportedMnemonicAccount(mnemonic: string, label?: string, hdVersion: 1 | 2 = 2): Promise<AccountPublic> {
+  if (!isValidMnemonic(mnemonic)) throw new Error('invalid mnemonic');
+  const { plain, pin } = await readPlainViaSession();
+  const kp = keypairFromMnemonic(mnemonic, 0, hdVersion);
+  if (plain.accounts.some((a) => a.address === kp.address)) {
+    throw new Error('this account is already in your wallet');
+  }
+  const id = newAccountId();
+  const acc: AccountInVault = {
+    id,
+    label: label ?? nextDefaultLabel(plain),
+    address: kp.address,
+    publicKeyB64: bytesToBase64(kp.publicKey),
+    privSeed32B64: bytesToBase64(kp.privateKey),
+    source: 'imported-mnemonic',
     mnemonic,
     hdIndex: 0,
-    hdVersion,
+    createdAt: Date.now(),
   };
-  await writeVault(plain, pin);
-  return { address: kp.address };
+  plain.accounts.push(acc);
+  plain.activeAccountId = id;
+  await writeVaultV2(plain, pin);
+  await setSession(plainToSession(plain, pin));
+  return toPublic(acc);
 }
 
-export async function importFromPrivateKey(privB64: string, pin: string): Promise<{ address: string }> {
-  if ((await hasVault())) throw new Error('vault already exists');
+export async function addImportedPrivateKeyAccount(privB64: string, label?: string): Promise<AccountPublic> {
+  const { plain, pin } = await readPlainViaSession();
   const kp = keypairFromPrivateKeyB64(privB64.trim());
-  const plain: VaultPlaintext = {
+  if (plain.accounts.some((a) => a.address === kp.address)) {
+    throw new Error('this account is already in your wallet');
+  }
+  const id = newAccountId();
+  const acc: AccountInVault = {
+    id,
+    label: label ?? nextDefaultLabel(plain),
     address: kp.address,
     publicKeyB64: bytesToBase64(kp.publicKey),
     privSeed32B64: bytesToBase64(kp.privateKey),
+    source: 'imported-priv',
+    createdAt: Date.now(),
   };
-  await writeVault(plain, pin);
-  return { address: kp.address };
+  plain.accounts.push(acc);
+  plain.activeAccountId = id;
+  await writeVaultV2(plain, pin);
+  await setSession(plainToSession(plain, pin));
+  return toPublic(acc);
 }
 
-export function sessionToSeed(s: UnlockedSession): Uint8Array {
+// ---------------- legacy aliases (kept so old call sites still link) ----------------
+
+export const createNewWallet = createInitialWallet;
+export const importFromMnemonic = importInitialFromMnemonic;
+export const importFromPrivateKey = importInitialFromPrivateKey;
+
+export function sessionToSeed(s: { privSeed32B64: string }): Uint8Array {
   return base64ToBytes(s.privSeed32B64);
 }
