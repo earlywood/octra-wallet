@@ -36,11 +36,16 @@ export interface Settings {
   claimUrl: string;
 }
 
-// see relayer-proxy/README.md for why relayerUrl points at our cloudflare
-// worker instead of the upstream relayer (TL;DR: upstream returns duplicated
-// CORS headers that browsers reject).
+// Both rpcUrl and relayerUrl point at the SAME cloudflare worker. The worker
+// routes per request based on the JSON-RPC method in the body: bridge* → relayer
+// upstream, everything else → octra RPC upstream. Dual purpose:
+//   1. dedupe the upstream relayer's malformed CORS headers (browsers reject
+//      duplicates, curl doesn't — see relayer-proxy/README.md)
+//   2. bypass octra's geo-IP block by giving end users a single proxy host
+//      they can reach (workers.dev is globally accessible) regardless of
+//      whether their region has direct access to octra.network or the relayer.
 const DEFAULTS: Settings = {
-  rpcUrl: 'https://octra.network/rpc',
+  rpcUrl: 'https://octra-relay.salamistroker.workers.dev',
   relayerUrl: 'https://octra-relay.salamistroker.workers.dev',
   explorerUrl: 'https://octrascan.io',
   ethRpcUrl: 'https://ethereum-rpc.publicnode.com',
@@ -52,12 +57,16 @@ export async function getSettings(): Promise<Settings> {
   const merged = { ...DEFAULTS, ...(r[SETTINGS_KEY] ?? {}) };
   let migrated = false;
   // earlier dev defaults that need upgrading in place:
-  if (merged.rpcUrl === 'https://octra.network') {
-    merged.rpcUrl = 'https://octra.network/rpc';
-    migrated = true;
-  }
   if (merged.ethRpcUrl === 'https://eth.llamarpc.com') {
     merged.ethRpcUrl = 'https://ethereum-rpc.publicnode.com';
+    migrated = true;
+  }
+  // rpcUrl: upgrade direct-octra-network users to the proxy worker (geo-block
+  // bypass + same proxy that handles the relayer). recognise both the old
+  // bare-host form ('https://octra.network') AND the path form
+  // ('https://octra.network/rpc') since both have shipped at different times.
+  if (merged.rpcUrl === 'https://octra.network' || merged.rpcUrl === 'https://octra.network/rpc') {
+    merged.rpcUrl = 'https://octra-relay.salamistroker.workers.dev';
     migrated = true;
   }
   // relayer: upgrade users from the broken-CORS upstream URL to our worker proxy

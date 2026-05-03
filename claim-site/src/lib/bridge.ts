@@ -6,7 +6,10 @@ export const ETH_BRIDGE = '0xE7eD69b852fd2a1406080B26A37e8E04e7dA4caE';
 // breaks browsers because every POST response repeats Access-Control-Allow-*
 // twice, which the Fetch spec says browsers must reject.
 export const DEFAULT_RELAYER = 'https://octra-relay.salamistroker.workers.dev';
-export const DEFAULT_OCTRA_RPC = 'https://octra.network/rpc';
+// Octra RPC also goes through the same worker (worker routes by JSON-RPC
+// method). Same proxy → bypass octra's geo-IP block for end users in restricted
+// regions; they only need to reach workers.dev.
+export const DEFAULT_OCTRA_RPC = 'https://octra-relay.salamistroker.workers.dev';
 export const DEFAULT_OCTRA_EXPLORER = 'https://octrascan.io';
 // publicnode is well-behaved on CORS for browser origins. llamarpc and
 // cloudflare-eth both have intermittent rate-limit / preflight problems.
