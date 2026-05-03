@@ -60,16 +60,16 @@ export function Onboarding({ onDone }: Props) {
     <div className="app">
       <div className="topbar">
         <div className="brand-row">
-          <Logo size={22} />
-          <span className="brand">octra</span>
+          <Logo size={26} />
+          <span className="brand"><span className="tag">UNOFFICIAL</span><span className="strike">OCTRA</span></span>
         </div>
       </div>
       <div className="content center">
         {mode === 'choose' && (
           <>
             <div style={{ textAlign: 'center', padding: '24px 0 12px' }}>
-              <Logo size={48} />
-              <div style={{ fontSize: 18, fontWeight: 600, marginTop: 12, marginBottom: 4 }}>welcome</div>
+              <Logo size={64} />
+              <div style={{ fontFamily: '"Impact", "Arial Black", sans-serif', fontSize: 22, fontWeight: 900, marginTop: 14, marginBottom: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>welcome</div>
               <div className="status info">create a new wallet, or import an existing one</div>
             </div>
             <button onClick={() => setMode('create')}>create new wallet</button>

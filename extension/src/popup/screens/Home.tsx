@@ -48,9 +48,9 @@ export function Home({ address, onLock }: Props) {
     <div className="app">
       <div className="topbar">
         <div className="brand-row">
-          <Logo size={22} />
+          <Logo size={26} />
           <div className="brand-text">
-            <div className="brand">octra</div>
+            <div className="brand"><span className="tag">UNOFFICIAL</span><span className="strike">OCTRA</span></div>
             <div
               className={`addr${copied ? ' copied' : ''}`}
               title="click to copy address"

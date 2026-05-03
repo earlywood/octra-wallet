@@ -11,6 +11,8 @@
   --ok: #3fba64;
   --err: #e43034;
   --warn: #ef8b17;
+  --tag-yellow: #ffe600;
+  --tag-red: #ff1f3a;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 * { box-sizing: border-box; }
@@ -46,9 +48,34 @@ label {
 }
 
 .shell { max-width: 640px; margin: 0 auto; padding: 40px 24px 64px; }
-.brand-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-.brand { font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
-.tagline { font-size: 13px; color: var(--muted); margin: 0 0 28px 38px; letter-spacing: 0.3px; }
+.brand-row { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+.brand {
+  font-family: "Impact", "Arial Narrow", "Arial Black", sans-serif;
+  font-weight: 900;
+  font-size: 30px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.brand .tag {
+  display: inline-block;
+  color: var(--tag-yellow);
+  background: var(--tag-red);
+  padding: 2px 8px 2px 7px;
+  margin-right: 8px;
+  transform: rotate(-3deg) translateY(-2px);
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+}
+.brand .strike {
+  text-decoration: line-through;
+  text-decoration-color: var(--tag-red);
+  text-decoration-thickness: 3px;
+  opacity: 0.85;
+}
+.brand .strike .small { font-size: 0.7em; opacity: 0.85; }
+.tagline { font-size: 13px; color: var(--muted); margin: 0 0 28px 42px; letter-spacing: 0.3px; }
 
 .card {
   background: var(--panel);

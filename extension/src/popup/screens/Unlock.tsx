@@ -28,14 +28,14 @@ export function Unlock({ onUnlock }: Props) {
     <div className="app">
       <div className="topbar">
         <div className="brand-row">
-          <Logo size={22} />
-          <span className="brand">octra</span>
+          <Logo size={26} />
+          <span className="brand"><span className="tag">UNOFFICIAL</span><span className="strike">OCTRA</span></span>
         </div>
       </div>
       <div className="content center">
         <div style={{ textAlign: 'center', padding: '24px 0 12px' }}>
-          <Logo size={40} />
-          <div style={{ fontSize: 16, fontWeight: 600, marginTop: 10 }}>unlock</div>
+          <Logo size={56} />
+          <div style={{ fontFamily: '"Impact", "Arial Black", sans-serif', fontSize: 20, fontWeight: 900, marginTop: 12, letterSpacing: '0.04em', textTransform: 'uppercase' }}>unlock</div>
           <div className="status info">enter your PIN to continue</div>
         </div>
         <div>

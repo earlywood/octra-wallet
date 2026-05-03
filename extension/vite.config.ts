@@ -4,10 +4,10 @@ import { crx, defineManifest } from '@crxjs/vite-plugin';
 
 const manifest = defineManifest({
   manifest_version: 3,
-  name: 'Octra Wallet',
+  name: 'Unofficial Octra Wallet',
   version: '0.1.0',
-  description: 'Browser wallet for the Octra network with built-in OCT ↔ wOCT bridge.',
-  action: { default_popup: 'src/popup/index.html', default_title: 'Octra Wallet' },
+  description: 'Unofficial browser wallet for the Octra network with built-in OCT ↔ wOCT bridge. Not affiliated with Octra Labs.',
+  action: { default_popup: 'src/popup/index.html', default_title: 'Unofficial Octra Wallet' },
   background: { service_worker: 'src/background/service-worker.ts', type: 'module' },
   permissions: ['storage', 'tabs'],
   host_permissions: [

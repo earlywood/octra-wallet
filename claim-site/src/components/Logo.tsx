@@ -1,9 +1,15 @@
-interface Props { size?: number; color?: string }
+interface Props { size?: number }
 
-export function Logo({ size = 28, color = '#0000DB' }: Props) {
+// Composite (Octra ring + AC ski mask) baked at build time by
+// claim-site/scripts/gen-icons.mjs into public/favicon-256.png.
+export function Logo({ size = 28 }: Props) {
   return (
-    <svg width={size} height={size} viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <circle cx="25" cy="25" r="21" stroke={color} strokeWidth="8" />
-    </svg>
+    <img
+      src={`${import.meta.env.BASE_URL}favicon-256.png`}
+      width={size}
+      height={size}
+      alt=""
+      style={{ display: 'inline-block', flexShrink: 0 }}
+    />
   );
 }

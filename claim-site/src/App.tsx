@@ -7,8 +7,11 @@ function Header({ subtitle }: { subtitle: string }) {
   return (
     <>
       <div className="brand-row">
-        <Logo size={28} />
-        <span className="brand">octra bridge</span>
+        <Logo size={44} />
+        <span className="brand">
+          <span className="tag">UNOFFICIAL</span>
+          <span className="strike">OCTRA <span className="small">BRIDGE</span></span>
+        </span>
       </div>
       <div className="tagline">{subtitle}</div>
     </>
