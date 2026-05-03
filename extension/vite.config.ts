@@ -16,7 +16,7 @@ const manifest = defineManifest({
   description: 'Unofficial browser wallet for the Octra network with built-in OCT ↔ wOCT bridge. Not affiliated with Octra Labs.',
   action: { default_popup: 'src/popup/index.html', default_title: 'Unofficial Octra Wallet' },
   background: { service_worker: 'src/background/service-worker.ts', type: 'module' },
-  permissions: ['storage', 'tabs'],
+  permissions: ['storage', 'tabs', 'offscreen'],
   host_permissions: [
     'http://*/*',
     'https://*/*',
@@ -35,5 +35,13 @@ export default defineConfig({
     __BUILD_HASH__: JSON.stringify(buildHash),
     __BUILD_TIME__: JSON.stringify(buildTime),
   },
-  build: { target: 'es2022', sourcemap: true },
+  build: {
+    target: 'es2022',
+    sourcemap: true,
+    rollupOptions: {
+      input: {
+        offscreen: 'src/offscreen/index.html',
+      },
+    },
+  },
 });

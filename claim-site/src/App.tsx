@@ -3,7 +3,6 @@ import { E2OFlow, type E2OParams } from './flows/E2OFlow';
 import { DEFAULT_ETH_RPC, DEFAULT_OCTRA_EXPLORER, DEFAULT_OCTRA_RPC, DEFAULT_RELAYER } from './lib/bridge';
 import { Logo } from './components/Logo';
 import { ClaimSiteGraffiti } from './components/Graffiti';
-import { BridgeBackdropVideo } from './components/BridgeBackdropVideo';
 
 function Header({ subtitle }: { subtitle: string }) {
   return (
@@ -43,7 +42,6 @@ export function App() {
     if (!p.lockTx || !p.amount || !p.recipient) {
       return (
         <>
-          <BridgeBackdropVideo />
           <ClaimSiteGraffiti />
           <div className="shell">
             <Header subtitle="claim wOCT after locking OCT" />
@@ -69,7 +67,6 @@ export function App() {
     };
     return (
       <>
-        <BridgeBackdropVideo />
         <ClaimSiteGraffiti />
         <div className="shell">
           <Header subtitle="claim wOCT after locking OCT" />

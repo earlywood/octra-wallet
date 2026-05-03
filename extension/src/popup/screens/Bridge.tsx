@@ -283,6 +283,9 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
       setErr(`bridge minimum is ${formatRawAmount(MIN_LOCK_RAW.toString())} OCT — anything less reverts on-chain`);
       return;
     }
+    // Fire & forget — start the music in the background offscreen doc so it
+    // keeps playing after this popup closes when the new claim tab takes focus.
+    void send({ kind: 'PLAY_MUSIC' });
     setBusy(true);
     const r = await send<{ tx_hash?: string }>({
       kind: 'BRIDGE_LOCK',
@@ -335,7 +338,7 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
             <input id="bridge-eth-recipient" name="ethRecipient" value={eth} onChange={(e) => setEth(e.target.value.trim())} placeholder="0x…" autoComplete="off" />
           </div>
           {err && <div className="callout err">{err}</div>}
-          <button onClick={doLock} disabled={busy || !amount || !eth}>{busy ? 'locking…' : 'lock OCT and open claim'}</button>
+          <button onClick={doLock} disabled={busy || !amount || !eth}>{busy ? 'locking…' : 'bridge to eth'}</button>
         </>
       )}
 
@@ -346,7 +349,7 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
           </div>
           <div className="kv"><span className="k">your octra address (recipient)</span></div>
           <div className="callout mono" style={{ fontSize: 11 }}>{address}</div>
-          <button onClick={openE2oFlow}>open burn flow →</button>
+          <button onClick={openE2oFlow}>bridge to octra</button>
           <hr />
           <div className="section-label">contracts</div>
           <div className="kv">

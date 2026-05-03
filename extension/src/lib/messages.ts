@@ -22,7 +22,10 @@ export type Msg =
   | { kind: 'RENAME_ACCOUNT'; id: string; label: string }
   | { kind: 'REMOVE_ACCOUNT'; id: string; pin: string }
   | { kind: 'EXPORT_PRIVATE_KEY'; id: string; pin: string }
-  | { kind: 'EXPORT_MNEMONIC'; id: string; pin: string };
+  | { kind: 'EXPORT_MNEMONIC'; id: string; pin: string }
+  // ambient audio (offscreen document)
+  | { kind: 'PLAY_MUSIC'; src?: string; volume?: number; loop?: boolean }
+  | { kind: 'STOP_MUSIC' };
 
 export interface Reply<T = unknown> { ok: true; data: T }
 export interface ReplyErr { ok: false; error: string }

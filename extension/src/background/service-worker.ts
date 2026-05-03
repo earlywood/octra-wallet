@@ -33,6 +33,35 @@ async function requireUnlocked(): Promise<{ address: string; publicKeyB64: strin
   return await getActiveAccountSeed();
 }
 
+// ---------- offscreen audio host ----------
+// MV3 only allows ONE offscreen document per extension; we tear down + recreate
+// to be safe across upgrades. AUDIO_PLAYBACK is a sanctioned reason — chrome
+// docs explicitly call this out as a use case for the offscreen API.
+const OFFSCREEN_PATH = 'src/offscreen/index.html';
+
+async function ensureOffscreen(): Promise<void> {
+  // hasDocument exists in Chrome 116+. Older Chrome on MV3: catch and retry.
+  try {
+    if (await chrome.offscreen.hasDocument?.()) return;
+  } catch { /* fall through */ }
+  try {
+    await chrome.offscreen.createDocument({
+      url: OFFSCREEN_PATH,
+      reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+      justification: 'play background music while user runs the bridge claim flow',
+    });
+  } catch (e) {
+    // 'Only a single offscreen document may be created' — race; ignore
+    if (!String(e).includes('single offscreen')) throw e;
+  }
+}
+
+async function closeOffscreen(): Promise<void> {
+  try {
+    if (await chrome.offscreen.hasDocument?.()) await chrome.offscreen.closeDocument();
+  } catch { /* nothing to close */ }
+}
+
 async function handle(msg: Msg): Promise<Reply | ReplyErr> {
   try {
     switch (msg.kind) {
@@ -174,6 +203,24 @@ async function handle(msg: Msg): Promise<Reply | ReplyErr> {
         await destroyVault();
         return { ok: true, data: null };
       }
+
+      case 'PLAY_MUSIC': {
+        await ensureOffscreen();
+        const src = msg.src ?? chrome.runtime.getURL('punjabi.mp3');
+        await chrome.runtime.sendMessage({
+          target: 'offscreen',
+          kind: 'PLAY',
+          src,
+          volume: msg.volume ?? 0.55,
+          loop: !!msg.loop,
+        });
+        return { ok: true, data: null };
+      }
+      case 'STOP_MUSIC': {
+        try { await chrome.runtime.sendMessage({ target: 'offscreen', kind: 'STOP' }); } catch { /* no doc */ }
+        await closeOffscreen();
+        return { ok: true, data: null };
+      }
       default:
         return { ok: false, error: `unknown msg: ${(msg as { kind?: string }).kind ?? 'unknown'}` };
     }
@@ -183,6 +230,13 @@ async function handle(msg: Msg): Promise<Reply | ReplyErr> {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // offscreen-targeted messages are routed by the offscreen doc, not us
+  if (msg && (msg as { target?: string }).target === 'offscreen') return false;
+  // self-cleanup signal from the offscreen audio when a song ends naturally
+  if (msg && (msg as { kind?: string }).kind === 'OFFSCREEN_AUDIO_DONE') {
+    void closeOffscreen();
+    return false;
+  }
   handle(msg as Msg).then(sendResponse);
   return true;
 });
