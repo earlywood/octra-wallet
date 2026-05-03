@@ -139,9 +139,6 @@ function AboutTab() {
         </div>
       </div>
 
-      <div className="callout warn" style={{ fontSize: 11 }}>
-        free open-source software. use at your own risk — you are solely responsible for the security of your seed phrase, private keys, and funds. there is no support team and no recovery if a seed is lost.
-      </div>
     </>
   );
 }
