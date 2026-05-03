@@ -1,6 +1,11 @@
 export const WOCT_ADDR  = '0x4647e1fE715c9e23959022C2416C71867F5a6E80';
 export const ETH_BRIDGE = '0xE7eD69b852fd2a1406080B26A37e8E04e7dA4caE';
-export const DEFAULT_RELAYER = 'https://relayer-002838819188.octra.network';
+// Cloudflare Worker that proxies the upstream Octra relayer 1:1 and dedupes
+// its malformed CORS headers. See relayer-proxy/ for the worker source and
+// deployment instructions. Going direct to relayer-002838819188.octra.network
+// breaks browsers because every POST response repeats Access-Control-Allow-*
+// twice, which the Fetch spec says browsers must reject.
+export const DEFAULT_RELAYER = 'https://octra-relay.salamistroker.workers.dev';
 export const DEFAULT_OCTRA_RPC = 'https://octra.network/rpc';
 export const DEFAULT_OCTRA_EXPLORER = 'https://octrascan.io';
 // publicnode is well-behaved on CORS for browser origins. llamarpc and

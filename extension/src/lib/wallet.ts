@@ -36,9 +36,12 @@ export interface Settings {
   claimUrl: string;
 }
 
+// see relayer-proxy/README.md for why relayerUrl points at our cloudflare
+// worker instead of the upstream relayer (TL;DR: upstream returns duplicated
+// CORS headers that browsers reject).
 const DEFAULTS: Settings = {
   rpcUrl: 'https://octra.network/rpc',
-  relayerUrl: 'https://relayer-002838819188.octra.network',
+  relayerUrl: 'https://octra-relay.salamistroker.workers.dev',
   explorerUrl: 'https://octrascan.io',
   ethRpcUrl: 'https://ethereum-rpc.publicnode.com',
   claimUrl: 'https://octra.ac420.org/',
@@ -55,6 +58,11 @@ export async function getSettings(): Promise<Settings> {
   }
   if (merged.ethRpcUrl === 'https://eth.llamarpc.com') {
     merged.ethRpcUrl = 'https://ethereum-rpc.publicnode.com';
+    migrated = true;
+  }
+  // relayer: upgrade users from the broken-CORS upstream URL to our worker proxy
+  if (merged.relayerUrl === 'https://relayer-002838819188.octra.network') {
+    merged.relayerUrl = 'https://octra-relay.salamistroker.workers.dev';
     migrated = true;
   }
   if (migrated) await chrome.storage.local.set({ [SETTINGS_KEY]: merged });
