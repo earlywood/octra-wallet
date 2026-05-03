@@ -82,34 +82,22 @@ export function Tag({ text, color = '#ffe600', size = 22, rotate = -8, flicker, 
   );
 }
 
-// Full-page composition for the claim site. One Milady, eight tags, no
-// wagmi, lean cyberpunk-snobbish.
+// Full-page composition for the claim site. one Milady + the one keeper tag
+// (post-FHE depression — fits the bridge context too well to drop).
 export function ClaimSiteGraffiti() {
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
-      <Tag text="chknen nuget"          color="#ffe600" size={42} rotate={-13} style={{ top: '8vh',   left: '4vw' }} />
-      <Tag text="india does not forgive" color="#ff1f3a" size={26} rotate={5}   style={{ top: '32vh', right: '3vw' }} />
-      <Tag text="ZERO TRUST"            color="#ffe600" size={64} rotate={-3}  style={{ bottom: '14vh', left: '5vw' }} />
-      <Tag text="dark forest"           color="#ffe600" size={22} rotate={4}   style={{ top: '64vh', left: '2vw' }} />
-      <Tag text="404: REGRET"           color="#ff1f3a" size={36} rotate={-7}  flicker style={{ top: '2vh',  right: '14vw' }} />
-      <Tag text="post-FHE depression"   color="#ff1f3a" size={20} rotate={6}   style={{ bottom: '6vh', right: '4vw' }} />
-      <Tag text="burn after read"       color="#ffe600" size={26} rotate={11}  style={{ top: '78vh', right: '6vw' }} />
-      <Tag text="air-gapped"            color="#ffe600" size={18} rotate={-4}  style={{ top: '92vh', left: '36vw' }} />
-      <Tag text="signal // noise"       color="#ff1f3a" size={20} rotate={2}   style={{ top: '48vh', left: '4vw' }} />
-
+      <Tag text="post-FHE depression" color="#ff1f3a" size={20} rotate={6} style={{ bottom: '6vh', right: '4vw' }} />
       <Milady size={140} opacity={0.45} rotate={-6} tint="white" style={{ top: '18vh', right: '5vw' }} />
     </div>
   );
 }
 
-// Tight popup version (360 × ~600). Three small tags + a tiny Milady tucked
-// into a corner so the wallet UI stays uncrowded.
+// Tight popup version. Just the Milady — no spray-paint tags, the wallet UI
+// stays clean.
 export function PopupGraffiti() {
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
-      <Tag text="zero trust"      color="#ffe600" size={13} rotate={-12} style={{ top: 14, right: 90 }} />
-      <Tag text="chknen"          color="#ff1f3a" size={11} rotate={6}   style={{ bottom: 8,  left: 10 }} />
-      <Tag text="encrypted btw"   color="#ffe600" size={10} rotate={-4}  flicker style={{ bottom: 8, right: 8 }} />
       <Milady size={62} opacity={0.55} rotate={-8} tint="red" style={{ bottom: 28, right: 12 }} />
     </div>
   );
