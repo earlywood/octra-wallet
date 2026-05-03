@@ -20,14 +20,20 @@ export async function relayerCall<T = unknown>(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    // The relayer is fronted by an nginx layer that aggressively caches POST
-    // responses (X-Cache-Status: HIT seen in production). Once an empty
-    // bridgeHeader response gets cached, every poll keeps seeing the empty
-    // version even after the relayer has actually published. Cache-Control:
-    // no-cache forces a revalidate; the cb param defeats any URL-keyed cache.
+    // The relayer is fronted by an nginx layer that caches POST responses
+    // (X-Cache-Status: HIT seen in production). Once an empty bridgeHeader
+    // response gets cached, every poll keeps seeing the empty version even
+    // after the relayer has actually published. The ?cb=<ts> query param
+    // defeats the cache because it makes each request URL-unique.
+    //
+    // DO NOT add Cache-Control / Pragma request headers here: the relayer's
+    // CORS preflight only echoes 'Access-Control-Allow-Headers: Content-Type',
+    // so adding Cache-Control causes the browser to reject the preflight and
+    // the actual POST never leaves the browser. (silent fetch failure that
+    // looks like 'relayer never publishes', cost ~3 hours of debugging.)
     const r = await fetch(`${url}?cb=${Date.now()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: ++rid, method, params }),
       signal: ctrl.signal,
     });
@@ -92,10 +98,9 @@ export interface RecoveryDoc {
 
 export async function fetchRecovery(relayerUrl: string, signal?: AbortSignal): Promise<RecoveryDoc | null> {
   try {
-    const r = await fetch(`${relayerUrl}/recovery.json?cb=${Date.now()}`, {
-      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
-      signal,
-    });
+    // No Cache-Control / Pragma headers — relayer CORS rejects them. ?cb=ts
+    // alone is enough to bypass any URL-keyed nginx cache.
+    const r = await fetch(`${relayerUrl}/recovery.json?cb=${Date.now()}`, { signal });
     if (!r.ok) return null;
     return await r.json() as RecoveryDoc;
   } catch {
