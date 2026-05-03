@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Steps, type StepDef } from '../components/Steps';
 import { WalletPicker } from '../components/WalletPicker';
 import { formatRawAmount } from '../lib/bridge';
-import { findOurMessage, getClaimCalldata } from '../lib/relayer';
+import { findOurMessage, getClaimCalldata, relayerCall } from '../lib/relayer';
 import { pollUntilEpoch, pollUntilHeader, sleep } from '../lib/flow';
 import { simulateClaim, submitClaim, waitForReceipt, type Eip1193Provider } from '../lib/eth';
 
@@ -31,6 +31,7 @@ export function O2EFlow({ params }: { params: O2EParams }) {
   const [claimSentAt, setClaimSentAt] = useState<number | null>(null);
   const [lockStartedAt] = useState<number>(() => Date.now());
   const [headerStartedAt, setHeaderStartedAt] = useState<number | null>(null);
+  const [relayerLatest, setRelayerLatest] = useState<number | null>(null);
   const [, setTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -41,6 +42,23 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [isTimedActive]);
+
+  // Diagnostic: while waiting on the relayer, fetch its latest finalized
+  // epoch every 30s so we can show the user how far behind it is. If their
+  // lock's epoch is past the relayer's latest, the relayer literally cannot
+  // publish yet — that's not stuck, it's working as designed.
+  useEffect(() => {
+    if (phase !== 'wait_header') return;
+    const fetchStatus = async () => {
+      const r = await relayerCall<{ latest_finalized_epoch?: number }>(params.relayerUrl, 'bridgeStatus');
+      if (r.ok && r.result?.latest_finalized_epoch != null) {
+        setRelayerLatest(r.result.latest_finalized_epoch);
+      }
+    };
+    fetchStatus();
+    const t = setInterval(fetchStatus, 30_000);
+    return () => clearInterval(t);
+  }, [phase, params.relayerUrl]);
 
   useEffect(() => {
     drive();
@@ -125,11 +143,31 @@ export function O2EFlow({ params }: { params: O2EParams }) {
   const HEADER_ETA = 120;
   const CLAIM_ETA = 30;
 
+  function fmtDuration(sec: number): string {
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s ? `${m}m ${s}s` : `${m}m`;
+  }
+
   function elapsedNote(startedAt: number | null, etaSec: number, suffix = ''): string {
     if (!startedAt) return '';
     const elapsed = Math.floor((Date.now() - startedAt) / 1000);
     if (elapsed < etaSec) return `~${etaSec - elapsed}s remaining${suffix}`;
-    return `${elapsed}s elapsed${suffix} (typical ${etaSec}s)`;
+    return `${fmtDuration(elapsed)} elapsed${suffix} (typical ${etaSec}s)`;
+  }
+
+  function headerNoteText(): string | undefined {
+    if (!headerStartedAt) return '';
+    const elapsedSec = Math.floor((Date.now() - headerStartedAt) / 1000);
+    const base = elapsedSec < HEADER_ETA
+      ? `~${HEADER_ETA - elapsedSec}s remaining (typical)`
+      : `${fmtDuration(elapsedSec)} elapsed (typical ${HEADER_ETA}s)`;
+    if (relayerLatest != null && epoch != null) {
+      const gap = relayerLatest - epoch;
+      if (gap < 0) return `${base} · waiting for epoch ${epoch} to finalize (relayer at ${relayerLatest}, ${-gap} epochs behind)`;
+    }
+    return base;
   }
 
   // failure attribution: figure out which step the failure landed on so we can
@@ -155,7 +193,7 @@ export function O2EFlow({ params }: { params: O2EParams }) {
                    : lockStatus === 'active' ? elapsedNote(lockStartedAt, LOCK_ETA)
                    : undefined;
   const headerNote = headerStatus === 'failed' ? 'header never published'
-                   : headerStatus === 'active' ? elapsedNote(headerStartedAt, HEADER_ETA)
+                   : headerStatus === 'active' ? headerNoteText()
                    : undefined;
   const claimNote  = claimStatus === 'active'
                        ? phase === 'sim'        ? 'verifying with ethereum…'
@@ -188,6 +226,12 @@ export function O2EFlow({ params }: { params: O2EParams }) {
       <div className="card">
         <Steps steps={steps} />
         {statusMsg && <div className="callout info">{statusMsg}</div>}
+        {phase === 'wait_header' && headerStartedAt && (Date.now() - headerStartedAt) > 3 * 60_000 && (
+          <div className="callout info" style={{ marginTop: 10, fontSize: 12 }}>
+            taking longer than usual. the relayer is third-party — sometimes it lags.{' '}
+            <strong>you can close this tab any time</strong> — your OCT lock is safe on-chain, and the wallet popup's <em>resume</em> button on this entry will pick the claim up from exactly where it left off.
+          </div>
+        )}
         {err && <div className="callout err" style={{ marginTop: 10 }}>{err}</div>}
       </div>
 

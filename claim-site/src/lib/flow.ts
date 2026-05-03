@@ -29,19 +29,23 @@ export async function pollUntilEpoch(rpcUrl: string, txHash: string, signal: Abo
   throw new Error('lock tx not finalized within 5min');
 }
 
-export async function pollUntilHeader(relayerUrl: string, epoch: number, signal: AbortSignal, intervalMs = 5000, timeoutMs = 30 * 60_000): Promise<BridgeHeaderResult> {
-  // 30 min timeout. typical is 1-3 min once the lock's epoch finalizes, but
-  // edge cases (relayer outage, validator slowness, cold-cache races) can
-  // push it well past 10 min. better to wait too long than time out a tx
-  // that's actually about to land.
+// No timeout. The relayer is third-party infra we don't control; if it's
+// backed up, throwing 'timed out' just punishes the user for waiting and
+// loses the in-flight state. Instead poll forever until the abort signal
+// fires (component unmounts / user closes tab). Adaptive backoff keeps us
+// from hammering the relayer once we're past the typical ETA window.
+export async function pollUntilHeader(relayerUrl: string, epoch: number, signal: AbortSignal): Promise<BridgeHeaderResult> {
   const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
+  while (true) {
     if (signal.aborted) throw new Error('aborted');
     const r = await relayerCall<BridgeHeaderResult>(relayerUrl, 'bridgeHeader', [epoch]);
     if (r.ok && r.result && (r.result.message_count ?? 0) > 0) return r.result;
+    const elapsedSec = (Date.now() - start) / 1000;
+    const intervalMs = elapsedSec < 120 ? 5_000      // first 2 min: every 5s
+                    :  elapsedSec < 600 ? 15_000     // 2–10 min: every 15s
+                    :  60_000;                        // beyond that: every 60s
     await sleep(intervalMs, signal);
   }
-  throw new Error('relayer did not publish header within 30min — try the retry button or check octra status');
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
