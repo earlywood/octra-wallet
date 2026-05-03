@@ -7,6 +7,11 @@ export const ETH_BRIDGE   = '0xE7eD69b852fd2a1406080B26A37e8E04e7dA4caE';
 export const DEFAULT_RELAYER = 'https://relayer-002838819188.octra.network';
 export const BURN_SELECTOR = '0xe3e3aed0';
 
+// Bridge contract enforces a minimum lock — verified empirically: 0.9 OCT
+// reverts with 'below minimum lock', 1 OCT succeeds. Contract has no view
+// method exposing the value (checked octra_contractAbi), so this is hardcoded.
+export const MIN_LOCK_RAW = 1_000_000n;
+
 let relayerId = 0;
 
 export interface RelayerOk<T = unknown> { ok: true; result: T }

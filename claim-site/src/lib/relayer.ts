@@ -20,9 +20,14 @@ export async function relayerCall<T = unknown>(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetch(url, {
+    // The relayer is fronted by an nginx layer that aggressively caches POST
+    // responses (X-Cache-Status: HIT seen in production). Once an empty
+    // bridgeHeader response gets cached, every poll keeps seeing the empty
+    // version even after the relayer has actually published. Cache-Control:
+    // no-cache forces a revalidate; the cb param defeats any URL-keyed cache.
+    const r = await fetch(`${url}?cb=${Date.now()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
       body: JSON.stringify({ jsonrpc: '2.0', id: ++rid, method, params }),
       signal: ctrl.signal,
     });

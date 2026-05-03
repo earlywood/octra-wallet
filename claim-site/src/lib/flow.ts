@@ -29,7 +29,11 @@ export async function pollUntilEpoch(rpcUrl: string, txHash: string, signal: Abo
   throw new Error('lock tx not finalized within 5min');
 }
 
-export async function pollUntilHeader(relayerUrl: string, epoch: number, signal: AbortSignal, intervalMs = 5000, timeoutMs = 10 * 60_000): Promise<BridgeHeaderResult> {
+export async function pollUntilHeader(relayerUrl: string, epoch: number, signal: AbortSignal, intervalMs = 5000, timeoutMs = 30 * 60_000): Promise<BridgeHeaderResult> {
+  // 30 min timeout. typical is 1-3 min once the lock's epoch finalizes, but
+  // edge cases (relayer outage, validator slowness, cold-cache races) can
+  // push it well past 10 min. better to wait too long than time out a tx
+  // that's actually about to land.
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (signal.aborted) throw new Error('aborted');
@@ -37,7 +41,7 @@ export async function pollUntilHeader(relayerUrl: string, epoch: number, signal:
     if (r.ok && r.result && (r.result.message_count ?? 0) > 0) return r.result;
     await sleep(intervalMs, signal);
   }
-  throw new Error('relayer did not publish header within 10min');
+  throw new Error('relayer did not publish header within 30min — try the retry button or check octra status');
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
