@@ -79,7 +79,7 @@ export function Onboarding({ onDone }: Props) {
                 <li>you are solely responsible for the security of your seed phrase, private keys, and funds</li>
                 <li>this software comes with no warranty — bugs may exist</li>
                 <li>if you lose your seed or PIN, your funds are unrecoverable. there is no support team</li>
-                <li>cryptocurrency is volatile and can lose value</li>
+                <li>OHHHHHHH YEAAAAAHHHHHHHH</li>
               </ul>
             </div>
             <div className="row">
