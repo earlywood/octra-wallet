@@ -2,6 +2,7 @@ import { O2EFlow, type O2EParams } from './flows/O2EFlow';
 import { E2OFlow, type E2OParams } from './flows/E2OFlow';
 import { DEFAULT_ETH_RPC, DEFAULT_OCTRA_EXPLORER, DEFAULT_OCTRA_RPC, DEFAULT_RELAYER } from './lib/bridge';
 import { Logo } from './components/Logo';
+import { ClaimSiteGraffiti } from './components/Graffiti';
 
 function Header({ subtitle }: { subtitle: string }) {
   return (
@@ -40,15 +41,18 @@ export function App() {
   if (p.dir === 'o2e') {
     if (!p.lockTx || !p.amount || !p.recipient) {
       return (
-        <div className="shell">
-          <Header subtitle="claim wOCT after locking OCT" />
-          <div className="card">
-            <div className="callout warn">
-              missing parameters. this page is opened by the Octra Wallet extension after a lock — start your bridge from the extension.
+        <>
+          <ClaimSiteGraffiti />
+          <div className="shell">
+            <Header subtitle="claim wOCT after locking OCT" />
+            <div className="card">
+              <div className="callout warn">
+                missing parameters. this page is opened by the Unofficial Octra Wallet extension after a lock — start your bridge from the extension.
+              </div>
             </div>
+            <Footer />
           </div>
-          <Footer />
-        </div>
+        </>
       );
     }
     const params: O2EParams = {
@@ -62,11 +66,14 @@ export function App() {
       bridgeId: p.id,
     };
     return (
-      <div className="shell">
-        <Header subtitle="claim wOCT after locking OCT" />
-        <O2EFlow params={params} />
-        <Footer />
-      </div>
+      <>
+        <ClaimSiteGraffiti />
+        <div className="shell">
+          <Header subtitle="claim wOCT after locking OCT" />
+          <O2EFlow params={params} />
+          <Footer />
+        </div>
+      </>
     );
   }
 
@@ -78,11 +85,14 @@ export function App() {
     suggestedAmount: p.amount || undefined,
   };
   return (
-    <div className="shell">
-      <Header subtitle="burn wOCT to unlock OCT" />
-      <E2OFlow params={params} />
-      <Footer />
-    </div>
+    <>
+      <ClaimSiteGraffiti />
+      <div className="shell">
+        <Header subtitle="burn wOCT to unlock OCT" />
+        <E2OFlow params={params} />
+        <Footer />
+      </div>
+    </>
   );
 }
 

@@ -37,14 +37,17 @@ console.log(`source ${meta.width}×${meta.height} → cropping ${sourceSide}² a
 
 async function makeIcon(size, outPath) {
   // Geometry: ring stroke is 16% of total size, sitting just inside the
-  // canvas edge. Mask fills the inner circle with a tiny overflow (1.04×) so
-  // it nudges right up against the ring inner edge for the "peeking out"
-  // feel rather than floating in empty space.
+  // canvas edge. Mask fills the inner circle slightly oversized (1.12×) AND
+  // nudged up by ~2.5% to hide the yellow background border at the top of
+  // the source PNG — we want only the navy mask visible inside the ring,
+  // not the yellow halo.
   const stroke = Math.max(2, Math.round(size * 0.16));
   const ringR = size / 2 - Math.max(1, Math.round(size * 0.03));
   const innerR = ringR - stroke;
-  const maskSize = Math.round(innerR * 2 * 1.04);
-  const maskOffset = Math.round((size - maskSize) / 2);
+  const maskSize = Math.round(innerR * 2 * 1.12);
+  const maskOffsetX = Math.round((size - maskSize) / 2);
+  const verticalNudge = Math.max(1, Math.round(size * 0.025));
+  const maskOffsetY = maskOffsetX - verticalNudge;
 
   // Step 1: prepare the mask art — center-crop, scale to maskSize, clip to circle
   const circleMaskSvg = Buffer.from(
@@ -71,7 +74,7 @@ async function makeIcon(size, outPath) {
   // Step 3: composite onto a transparent canvas — mask underneath, ring on top
   await sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .composite([
-      { input: skiMask, top: maskOffset, left: maskOffset },
+      { input: skiMask, top: maskOffsetY, left: maskOffsetX },
       { input: ringPng, top: 0, left: 0 },
     ])
     .png({ compressionLevel: 9 })

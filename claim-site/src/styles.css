@@ -47,7 +47,7 @@ label {
   text-transform: uppercase;
 }
 
-.shell { max-width: 640px; margin: 0 auto; padding: 40px 24px 64px; }
+.shell { max-width: 640px; margin: 0 auto; padding: 40px 24px 64px; position: relative; z-index: 1; }
 .brand-row { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
 .brand {
   font-family: "Impact", "Arial Narrow", "Arial Black", sans-serif;

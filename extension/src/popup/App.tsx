@@ -3,6 +3,7 @@ import { send } from '../lib/messages';
 import { Onboarding } from './screens/Onboarding';
 import { Unlock } from './screens/Unlock';
 import { Home } from './screens/Home';
+import { PopupGraffiti } from './Graffiti';
 
 interface Status {
   hasVault: boolean;
@@ -22,7 +23,15 @@ export function App() {
 
   if (!status) return <div className="app"><div className="content">loading...</div></div>;
 
-  if (!status.hasVault) return <Onboarding onDone={refresh} />;
-  if (!status.isUnlocked) return <Unlock onUnlock={refresh} />;
-  return <Home address={status.address!} onLock={refresh} />;
+  let inner;
+  if (!status.hasVault) inner = <Onboarding onDone={refresh} />;
+  else if (!status.isUnlocked) inner = <Unlock onUnlock={refresh} />;
+  else inner = <Home address={status.address!} onLock={refresh} />;
+
+  return (
+    <>
+      <PopupGraffiti />
+      {inner}
+    </>
+  );
 }
