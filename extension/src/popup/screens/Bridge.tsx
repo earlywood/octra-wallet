@@ -342,7 +342,7 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
       {dir === 'e2o' && (
         <>
           <div className="callout">
-            burn wOCT on ethereum → unlock OCT on octra. opens a new tab where your browser wallet (MetaMask, Rabby, etc.) signs the eth transactions natively.
+            burn wOCT on ethereum → unlock OCT on octra.
           </div>
           <div className="kv"><span className="k">your octra address (recipient)</span></div>
           <div className="callout mono" style={{ fontSize: 11 }}>{address}</div>

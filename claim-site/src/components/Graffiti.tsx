@@ -36,7 +36,11 @@ export function Milady({ size = 110, opacity = 0.55, rotate = 0, tint = 'yellow'
       aria-hidden="true"
       style={{
         position: 'absolute',
-        opacity,
+        // start invisible — milady-ghost keyframes drive opacity in & out so
+        // they materialise rarely, like a watcher peering through the wall
+        opacity: 0,
+        animation: 'milady-ghost 22s ease-in-out infinite',
+        ['--peak-opacity' as string]: String(opacity),
         transform: `rotate(${rotate}deg)`,
         pointerEvents: 'none',
         userSelect: 'none',
@@ -92,11 +96,12 @@ export function ClaimSiteGraffiti() {
 }
 
 // Tight popup version. Just the Milady — no spray-paint tags, the wallet UI
-// stays clean.
+// stays clean. Sat low at the bottom edge with the ghost animation breathing
+// it in and out.
 export function PopupGraffiti() {
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
-      <Milady size={62} opacity={0.55} rotate={-8} tint="red" style={{ bottom: 28, right: 12 }} />
+      <Milady size={62} opacity={0.6} rotate={-8} tint="red" style={{ bottom: 6, right: 12 }} />
     </div>
   );
 }
