@@ -14,6 +14,16 @@ npm run build
 
 Reload the extension after rebuilds. If something looks weird after a build, hard-refresh the popup.
 
+## Package for the Chrome Web Store
+
+```bash
+npm run build
+# then zip the contents of dist/ (not the dist folder itself):
+node -e "const a=require('archiver'),fs=require('fs'),p=require('path');const o=fs.createWriteStream('octra-wallet-1.0.0.zip');const z=a('zip',{zlib:{level:9}});z.pipe(o);(function w(d,b=''){for(const e of fs.readdirSync(d,{withFileTypes:true})){const f=p.join(d,e.name),r=p.posix.join(b,e.name);if(e.isDirectory())w(f,r);else if(!e.name.endsWith('.map'))z.file(f,{name:r});}})('dist');z.finalize();"
+```
+
+That excludes sourcemaps so the zip stays small. Upload the resulting `.zip` at [chrome.google.com/webstore/devconsole](https://chrome.google.com/webstore/devconsole).
+
 ## What's in here
 
 - `src/lib/crypto.ts` — Ed25519, BIP-39 mnemonic, octra HD derivation, AES-GCM vault

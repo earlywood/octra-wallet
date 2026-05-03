@@ -1,6 +1,6 @@
 # Unofficial Octra Wallet
 
-A browser-extension wallet for the Octra network with a built-in bridge to/from wOCT on Ethereum. Side project, not affiliated with Octra Labs in any way. Generate or import accounts, send / receive OCT, bridge both directions, switch between accounts, the usual stuff. The bridge plays Punjabi music when you click "bridge to eth" — you can turn it off in Settings → About if your coworkers are nearby.
+A browser-extension wallet for the Octra network with a built-in bridge to/from wOCT on Ethereum. Side project, not affiliated with Octra Labs in any way. Generate or import accounts, send / receive OCT, bridge both directions, switch between accounts, etc.
 
 ## Layout
 
@@ -13,7 +13,7 @@ relayer-proxy/  a tiny cloudflare worker that fixes octra's broken CORS
 
 ## How it fits together (briefly)
 
-The wallet holds your octra keys in an encrypted vault. When you bridge OCT → wOCT, the extension signs the lock tx on the octra side and opens a new tab to the claim site. The claim site waits for the bridge relayer to publish the merkle proof, then asks your MetaMask (or Rabby, OKX, whatever) to sign the eth tx natively. No WalletConnect, no relays in between, no project IDs. Reverse direction is the same idea — burn wOCT through the claim site, the relayer auto-unlocks OCT on the octra side.
+The wallet holds your octra keys in an encrypted vault. When you bridge OCT → wOCT, the extension signs the lock tx on the octra side and opens a new tab to the claim site. The claim site waits for the bridge relayer to publish the merkle proof, then asks your MetaMask (or Rabby, OKX, other wallet) to sign the eth tx natively. Reverse direction is the same idea — burn wOCT through the claim site, the relayer auto-unlocks OCT on the octra side.
 
 ## Try it
 

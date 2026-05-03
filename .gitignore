@@ -6,6 +6,9 @@ dist/
 .vite/
 *.tsbuildinfo
 
+# packaged extension zips (chrome web store uploads)
+extension/octra-wallet-*.zip
+
 # claude code local settings
 .claude/
 
