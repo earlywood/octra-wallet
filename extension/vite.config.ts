@@ -1,6 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { crx, defineManifest } from '@crxjs/vite-plugin';
+import { execSync } from 'node:child_process';
+
+const buildHash = (() => {
+  try { return execSync('git rev-parse --short HEAD').toString().trim(); }
+  catch { return 'dev'; }
+})();
+const buildTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
 
 const manifest = defineManifest({
   manifest_version: 3,
@@ -24,5 +31,9 @@ const manifest = defineManifest({
 export default defineConfig({
   plugins: [react(), crx({ manifest })],
   server: { port: 5173, strictPort: true, hmr: { port: 5173 } },
+  define: {
+    __BUILD_HASH__: JSON.stringify(buildHash),
+    __BUILD_TIME__: JSON.stringify(buildTime),
+  },
   build: { target: 'es2022', sourcemap: true },
 });

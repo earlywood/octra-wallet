@@ -5,7 +5,7 @@ import { Identicon } from '../Identicon';
 
 interface Props { onAccountsChanged: () => void }
 
-type Tab = 'network' | 'accounts';
+type Tab = 'network' | 'accounts' | 'about';
 
 export function Settings({ onAccountsChanged }: Props) {
   const [tab, setTab] = useState<Tab>('network');
@@ -15,9 +15,11 @@ export function Settings({ onAccountsChanged }: Props) {
       <div className="tabs" style={{ marginTop: -4 }}>
         <button className={tab === 'network' ? 'active' : ''} onClick={() => setTab('network')}>network</button>
         <button className={tab === 'accounts' ? 'active' : ''} onClick={() => setTab('accounts')}>accounts</button>
+        <button className={tab === 'about' ? 'active' : ''} onClick={() => setTab('about')}>about</button>
       </div>
       {tab === 'network' && <NetworkTab />}
       {tab === 'accounts' && <AccountsTab onAccountsChanged={onAccountsChanged} />}
+      {tab === 'about' && <AboutTab />}
     </div>
   );
 }
@@ -61,7 +63,7 @@ function NetworkTab() {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 500, fontSize: 12 }}>cloudflare proxy</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-              routes octra rpc + bridge relayer requests through a CF worker. needed in browsers because the upstream relayer returns malformed CORS headers — see <code>relayer-proxy/</code>.
+              routes octra rpc + bridge relayer requests through a CF worker.
             </div>
           </div>
           <button
@@ -104,6 +106,42 @@ function NetworkTab() {
       </div>
       {msg && <div className="status info">{msg}</div>}
       <button onClick={save}>save</button>
+    </>
+  );
+}
+
+// ---------------- about tab ----------------
+
+const REPO_URL = 'https://github.com/earlywood/octra-wallet';
+
+function AboutTab() {
+  return (
+    <>
+      <div style={{ textAlign: 'center', padding: '6px 0 4px' }}>
+        <div className="brand" style={{ fontSize: 20, marginBottom: 4 }}>
+          <span className="tag">UNOFFICIAL</span><span className="censored">OCTRA</span>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+          a community-built browser wallet for the octra network. not affiliated with octra labs.
+        </div>
+      </div>
+
+      <div className="callout">
+        <div className="kv"><span className="k">build</span><span className="v">{__BUILD_HASH__}</span></div>
+        <div className="kv"><span className="k">built at</span><span className="v">{__BUILD_TIME__} UTC</span></div>
+        <div className="kv">
+          <span className="k">source</span>
+          <span className="v"><a href={REPO_URL} target="_blank" rel="noopener noreferrer">github.com/earlywood/octra-wallet</a></span>
+        </div>
+        <div className="kv">
+          <span className="k">issues</span>
+          <span className="v"><a href={`${REPO_URL}/issues`} target="_blank" rel="noopener noreferrer">{REPO_URL.replace('https://', '')}/issues</a></span>
+        </div>
+      </div>
+
+      <div className="callout warn" style={{ fontSize: 11 }}>
+        free open-source software. use at your own risk — you are solely responsible for the security of your seed phrase, private keys, and funds. there is no support team and no recovery if a seed is lost.
+      </div>
     </>
   );
 }

@@ -4,10 +4,10 @@ import { Logo } from '../Logo';
 
 interface Props { onDone: () => void; }
 
-type Mode = 'choose' | 'create' | 'create-show' | 'import-mnemonic' | 'import-priv';
+type Mode = 'disclaimer' | 'declined' | 'choose' | 'create' | 'create-show' | 'import-mnemonic' | 'import-priv';
 
 export function Onboarding({ onDone }: Props) {
-  const [mode, setMode] = useState<Mode>('choose');
+  const [mode, setMode] = useState<Mode>('disclaimer');
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
   const [mnemonic, setMnemonic] = useState('');
@@ -65,6 +65,42 @@ export function Onboarding({ onDone }: Props) {
         </div>
       </div>
       <div className="content center">
+        {mode === 'disclaimer' && (
+          <>
+            <div style={{ textAlign: 'center', padding: '16px 0 4px' }}>
+              <Logo size={48} />
+              <div style={{ fontFamily: '"Impact", "Arial Black", sans-serif', fontSize: 18, fontWeight: 900, marginTop: 12, letterSpacing: '0.04em', textTransform: 'uppercase' }}>before you proceed</div>
+            </div>
+            <div className="callout warn" style={{ fontSize: 12, lineHeight: 1.5 }}>
+              this is community-built, open-source software. it is <strong>not affiliated with octra labs</strong>.
+              <div className="spacer-sm" />
+              by continuing you acknowledge:
+              <ul style={{ paddingLeft: 18, margin: '6px 0 0' }}>
+                <li>you are solely responsible for the security of your seed phrase, private keys, and funds</li>
+                <li>this software comes with no warranty — bugs may exist</li>
+                <li>if you lose your seed or PIN, your funds are unrecoverable. there is no support team</li>
+                <li>cryptocurrency is volatile and can lose value</li>
+              </ul>
+            </div>
+            <div className="row">
+              <button className="ghost" onClick={() => setMode('declined')}>decline</button>
+              <button onClick={() => setMode('choose')}>I understand &amp; accept</button>
+            </div>
+          </>
+        )}
+
+        {mode === 'declined' && (
+          <>
+            <div style={{ textAlign: 'center', padding: '24px 0 12px' }}>
+              <div style={{ fontFamily: '"Impact", "Arial Black", sans-serif', fontSize: 18, fontWeight: 900, letterSpacing: '0.04em', textTransform: 'uppercase' }}>declined</div>
+              <div className="status info" style={{ marginTop: 8 }}>
+                you must accept the disclaimer to use this wallet. close this popup if you do not wish to continue.
+              </div>
+            </div>
+            <button className="ghost" onClick={() => setMode('disclaimer')}>review terms again</button>
+          </>
+        )}
+
         {mode === 'choose' && (
           <>
             <div style={{ textAlign: 'center', padding: '24px 0 12px' }}>

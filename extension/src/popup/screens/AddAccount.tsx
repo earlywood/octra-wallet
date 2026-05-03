@@ -109,9 +109,12 @@ export function AddAccount({ onDone, onCancel }: Props) {
       {mode === 'show-mnemonic' && shownMnemonic && (
         <>
           <div className="callout warn">
-            this is a brand-new seed phrase. write down these 12 words — anyone with them controls every HD account derived from your wallet.
+            this is a brand-new seed phrase. write down these 12 words — they control this account and any future ones you generate.
           </div>
           <div className="callout mono" style={{ lineHeight: 1.7 }}>{shownMnemonic}</div>
+          <div className="callout" style={{ fontSize: 11 }}>
+            note: your existing imported-key account isn't covered by this seed. keep its private key backed up separately.
+          </div>
           <button onClick={onDone}>I saved it — done</button>
         </>
       )}
