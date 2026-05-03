@@ -82,12 +82,10 @@ export function Tag({ text, color = '#ffe600', size = 22, rotate = -8, flicker, 
   );
 }
 
-// Full-page composition for the claim site. one Milady + the one keeper tag
-// (post-FHE depression — fits the bridge context too well to drop).
+// Full-page composition for the claim site. just the milady, no tags.
 export function ClaimSiteGraffiti() {
   return (
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
-      <Tag text="post-FHE depression" color="#ff1f3a" size={20} rotate={6} style={{ bottom: '6vh', right: '4vw' }} />
       <Milady size={140} opacity={0.45} rotate={-6} tint="white" style={{ top: '18vh', right: '5vw' }} />
     </div>
   );

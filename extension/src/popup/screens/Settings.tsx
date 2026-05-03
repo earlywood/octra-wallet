@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { send } from '../../lib/messages';
-import type { Settings as SettingsT, AccountPublic } from '../../lib/wallet';
+import { PROXY_URL, UPSTREAM_OCTRA_RPC, UPSTREAM_RELAYER, type Settings as SettingsT, type AccountPublic } from '../../lib/wallet';
 import { Identicon } from '../Identicon';
 
 interface Props { onAccountsChanged: () => void }
@@ -34,6 +34,18 @@ function NetworkTab() {
 
   if (!s) return <div className="status info">loading…</div>;
 
+  // Toggle is derived from URL state — if BOTH endpoints point at the proxy
+  // it's "on", otherwise "off" (covers direct upstream and any custom URL).
+  const usingProxy = s.rpcUrl === PROXY_URL && s.relayerUrl === PROXY_URL;
+  function toggleProxy() {
+    if (!s) return;
+    if (usingProxy) {
+      setS({ ...s, rpcUrl: UPSTREAM_OCTRA_RPC, relayerUrl: UPSTREAM_RELAYER });
+    } else {
+      setS({ ...s, rpcUrl: PROXY_URL, relayerUrl: PROXY_URL });
+    }
+  }
+
   async function save() {
     if (!s) return;
     setMsg(null);
@@ -44,6 +56,29 @@ function NetworkTab() {
 
   return (
     <>
+      <div className="callout">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 500, fontSize: 12 }}>cloudflare proxy</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+              routes octra rpc + bridge relayer requests through a CF worker. needed in browsers because the upstream relayer returns malformed CORS headers — see <code>relayer-proxy/</code>.
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`toggle${usingProxy ? ' on' : ''}`}
+            onClick={toggleProxy}
+            aria-pressed={usingProxy}
+            aria-label="toggle cloudflare proxy"
+          />
+        </div>
+        {!usingProxy && (
+          <div className="callout warn" style={{ marginTop: 8, fontSize: 11, padding: '8px 10px' }}>
+            direct mode: bridge POSTs from browsers currently fail due to the upstream CORS bug. turn this on if your bridge isn't working.
+          </div>
+        )}
+      </div>
+
       <div>
         <label htmlFor="set-rpc">octra rpc</label>
         <input id="set-rpc" name="rpcUrl" autoComplete="off" value={s.rpcUrl} onChange={(e) => setS({ ...s, rpcUrl: e.target.value })} />

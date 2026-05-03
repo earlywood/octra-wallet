@@ -78,9 +78,18 @@ export interface UnlockedSession {
 
 // ---------------- defaults / settings ----------------
 
+// Network endpoint constants — exported so the Settings UI can offer a
+// 'use proxy' toggle that swaps between them.
+export const PROXY_URL          = 'https://octra-relay.salamistroker.workers.dev';
+export const UPSTREAM_OCTRA_RPC = 'https://octra.network/rpc';
+export const UPSTREAM_RELAYER   = 'https://relayer-002838819188.octra.network';
+
 const DEFAULTS: Settings = {
-  rpcUrl: 'https://octra-relay.salamistroker.workers.dev',
-  relayerUrl: 'https://octra-relay.salamistroker.workers.dev',
+  // proxy ON by default: bridge POSTs to the upstream relayer fail in
+  // browsers due to a duplicate-CORS-header bug at Octra's nginx (see
+  // relayer-proxy/README.md). once that's fixed upstream, default can flip.
+  rpcUrl: PROXY_URL,
+  relayerUrl: PROXY_URL,
   explorerUrl: 'https://octrascan.io',
   ethRpcUrl: 'https://ethereum-rpc.publicnode.com',
   claimUrl: 'https://octra.ac420.org/',
