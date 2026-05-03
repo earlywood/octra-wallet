@@ -44,6 +44,34 @@ interface OctraTxStatus {
   amount_raw?: string;
   message?: string;
   op_type?: string;
+  epoch?: number;
+}
+
+interface RecoveryEntry { tx_hash: string; epoch: number; leaf_index: number }
+interface RecoveryDoc {
+  latest_scanned_epoch: number;
+  by_recipient: Record<string, RecoveryEntry[]>;
+}
+
+async function fetchRecovery(relayerUrl: string): Promise<RecoveryDoc | null> {
+  try {
+    const r = await fetch(`${relayerUrl}/recovery.json?cb=${Date.now()}`);
+    if (!r.ok) return null;
+    return (await r.json()) as RecoveryDoc;
+  } catch {
+    return null;
+  }
+}
+
+function isLockStillUnclaimed(doc: RecoveryDoc, recipient: string, lockTxHash: string): boolean {
+  const wanted = lockTxHash.toLowerCase();
+  const list = doc.by_recipient?.[recipient.toLowerCase()];
+  if (Array.isArray(list) && list.some((e) => (e.tx_hash || '').toLowerCase() === wanted)) return true;
+  // defensive: some recipient mismatch — scan all buckets
+  for (const entries of Object.values(doc.by_recipient ?? {})) {
+    if (Array.isArray(entries) && entries.some((e) => (e.tx_hash || '').toLowerCase() === wanted)) return true;
+  }
+  return false;
 }
 
 function buildClaimUrl(base: string, params: Record<string, string>): string {
@@ -69,22 +97,52 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
     setHistory(await listBridges());
   }
 
-  // Probe each in-flight o2e lock against the octra rpc and mark it 'failed'
-  // if the node reports it rejected. without this, an entry whose lock
-  // reverted (e.g., 'below minimum lock') sits at 'locked' forever in the
-  // popup history with a stale resume button.
-  async function reconcileActive(entries: BridgeEntry[], rpcUrl: string) {
+  // Resolve 'locked' entries to their actual on-chain state. Two sources:
+  //   - octra_transaction(lock_hash): tells us if the lock reverted, and
+  //     whether it's confirmed (and at what epoch).
+  //   - relayer recovery.json: lists every unclaimed bridge message. if the
+  //     relayer has scanned past our epoch and our tx_hash is NOT in the doc,
+  //     the message has been claimed on ethereum. if it IS in the doc, claim
+  //     is still pending.
+  // without this, even a successfully-claimed bridge sits at 'locked' forever
+  // in popup history because the claim happens on a different origin
+  // (octra.ac420.org) which can't write back to chrome.storage.
+  async function reconcileActive(entries: BridgeEntry[], rpcUrl: string, relayerUrl: string) {
     const candidates = entries.filter(
-      (e) => e.direction === 'o2e' && e.octraLockTxHash && (e.status === 'locked' || e.status === 'lock_confirmed' || e.status === 'epoch_known'),
+      (e) => e.direction === 'o2e' && e.octraLockTxHash &&
+             (e.status === 'locked' || e.status === 'lock_confirmed' || e.status === 'epoch_known' || e.status === 'header_ready' || e.status === 'claiming'),
     );
+    if (candidates.length === 0) return;
+
+    const recovery = await fetchRecovery(relayerUrl);
     let any = false;
+
     for (const e of candidates) {
       const r = await rpcCall<OctraTxStatus>(rpcUrl, 'octra_transaction', [e.octraLockTxHash], 8_000);
       if (!r.ok || !r.result) continue;
-      if (r.result.status === 'rejected' || r.result.source === 'rejected_txs') {
-        const reason = r.result.error?.reason ?? r.result.error?.type ?? 'reverted on octra';
+      const tx = r.result;
+
+      // (a) did the lock revert on-chain?
+      if (tx.status === 'rejected' || tx.source === 'rejected_txs') {
+        const reason = tx.error?.reason ?? tx.error?.type ?? 'reverted on octra';
         await patchBridge(e.id, { status: 'failed', lastError: reason });
         any = true;
+        continue;
+      }
+
+      // (b) has the wOCT already been claimed on ethereum?
+      if (recovery && tx.epoch != null) {
+        const stillUnclaimed = isLockStillUnclaimed(recovery, e.ethRecipient ?? '', e.octraLockTxHash!);
+        if (recovery.latest_scanned_epoch >= tx.epoch && !stillUnclaimed) {
+          await patchBridge(e.id, { status: 'claimed' });
+          any = true;
+          continue;
+        }
+        // (c) at least promote 'locked' → 'lock_confirmed' so the user sees progress
+        if (e.status === 'locked' && tx.status === 'confirmed') {
+          await patchBridge(e.id, { status: 'lock_confirmed' });
+          any = true;
+        }
       }
     }
     if (any) await refreshHistory();
@@ -174,9 +232,11 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
 
   useEffect(() => {
     if (!settings) return;
-    const run = async () => { reconcileActive(await listBridges(), settings.rpcUrl); };
+    const run = async () => { reconcileActive(await listBridges(), settings.rpcUrl, settings.relayerUrl); };
     run();
-    const t = setInterval(run, 8000);
+    // 15s — the recovery.json fetch is ~170KB so we don't want to hammer it,
+    // and claim status doesn't change second-to-second anyway.
+    const t = setInterval(run, 15000);
     return () => clearInterval(t);
   }, [settings]);
 
