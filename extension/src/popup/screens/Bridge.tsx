@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { send } from '../../lib/messages';
 import { formatRawAmount, parseAmountToRaw, rpcCall } from '../../lib/rpc';
-import { ETH_BRIDGE, MIN_LOCK_RAW, WOCT_ADDR } from '../../lib/bridge';
+import { BRIDGE_VAULT, ETH_BRIDGE, MIN_LOCK_RAW, WOCT_ADDR } from '../../lib/bridge';
 import { deleteBridge, listBridges, newId, patchBridge, upsertBridge, type BridgeEntry } from '../../lib/bridgeStore';
 import type { Settings } from '../../lib/wallet';
 
@@ -39,6 +39,11 @@ interface OctraTxStatus {
   status?: string;
   source?: string;
   error?: { reason?: string; type?: string };
+  to?: string;
+  from?: string;
+  amount_raw?: string;
+  message?: string;
+  op_type?: string;
 }
 
 function buildClaimUrl(base: string, params: Record<string, string>): string {
@@ -55,6 +60,10 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [history, setHistory] = useState<BridgeEntry[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [showImport, setShowImport] = useState(false);
+  const [importHash, setImportHash] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importErr, setImportErr] = useState<string | null>(null);
 
   async function refreshHistory() {
     setHistory(await listBridges());
@@ -81,9 +90,79 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
     if (any) await refreshHistory();
   }
 
-  async function dismiss(id: string) {
-    await deleteBridge(id);
+  async function dismiss(e: BridgeEntry) {
+    let msg: string;
+    if (e.status === 'failed') {
+      msg = 'remove this entry? the lock was reverted on-chain — no OCT was actually locked.';
+    } else if (e.status === 'claimed' || e.status === 'unlocked') {
+      msg = 'remove this completed bridge from history?';
+    } else {
+      // in-flight: warn the user that their OCT is still committed on-chain
+      const tx = e.octraLockTxHash ?? '(unknown)';
+      msg = 'your OCT is still locked on-chain. removing this entry only clears it from popup history — funds are NOT lost, the lock can be claimed at any time later.\n\n'
+          + `to recover later, save this lock tx hash:\n${tx}\n\n`
+          + '(use "+ import lock by tx hash" below to bring the entry back.)\n\nremove anyway?';
+    }
+    if (!confirm(msg)) return;
+    await deleteBridge(e.id);
     await refreshHistory();
+  }
+
+  async function importLock() {
+    setImportErr(null);
+    if (!settings) { setImportErr('settings not loaded'); return; }
+    const hash = importHash.trim().replace(/^0x/, '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hash)) { setImportErr('invalid tx hash — expected 64 hex chars'); return; }
+    if (history.some((e) => e.octraLockTxHash?.toLowerCase() === hash)) {
+      setImportErr('that lock is already in your history below');
+      return;
+    }
+    setImporting(true);
+    try {
+      const r = await rpcCall<OctraTxStatus>(settings.rpcUrl, 'octra_transaction', [hash], 10_000);
+      if (!r.ok || !r.result) throw new Error(r.ok ? 'tx not found' : r.error);
+      const tx = r.result;
+      if (tx.to !== BRIDGE_VAULT) throw new Error('this is not a bridge lock — the recipient is not the bridge vault');
+      if (tx.op_type !== 'call') throw new Error('not a contract call tx');
+      if (tx.from !== address) throw new Error(`this lock was sent from ${tx.from?.slice(0, 12)}…, not your current wallet`);
+
+      let ethRecipient: string | undefined;
+      if (tx.message) {
+        try {
+          const params = JSON.parse(tx.message) as unknown[];
+          if (Array.isArray(params) && typeof params[0] === 'string' && /^0x[0-9a-fA-F]{40}$/.test(params[0])) {
+            ethRecipient = params[0].toLowerCase();
+          }
+        } catch { /* ignore */ }
+      }
+      if (!ethRecipient) throw new Error('could not parse eth recipient from the tx — is this really a lock_to_eth call?');
+
+      const amountRaw = tx.amount_raw ?? '0';
+      if (BigInt(amountRaw) <= 0n) throw new Error('lock amount is 0');
+
+      const rejected = tx.status === 'rejected' || tx.source === 'rejected_txs';
+      const status: BridgeEntry['status'] = rejected ? 'failed' : 'locked';
+      const lastError = rejected ? (tx.error?.reason ?? tx.error?.type ?? 'reverted on octra') : undefined;
+
+      await upsertBridge({
+        id: newId('o2e'),
+        direction: 'o2e',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        amountRaw,
+        status,
+        ethRecipient,
+        octraLockTxHash: hash,
+        ...(lastError ? { lastError } : {}),
+      });
+      setImportHash('');
+      setShowImport(false);
+      await refreshHistory();
+    } catch (e) {
+      setImportErr((e as Error).message);
+    } finally {
+      setImporting(false);
+    }
   }
 
   useEffect(() => {
@@ -228,6 +307,52 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
       <hr />
       <div style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: 0.4, marginBottom: 4 }}>recent bridges</div>
       {history.length === 0 && <div className="status info">no bridge activity yet.</div>}
+      <div style={{ marginBottom: 6 }}>
+        {!showImport ? (
+          <a
+            href="#"
+            onClick={(ev) => { ev.preventDefault(); setShowImport(true); setImportErr(null); }}
+            style={{ fontSize: 11 }}
+          >
+            + import lock by tx hash
+          </a>
+        ) : (
+          <div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input
+                placeholder="lock tx hash (64 hex)"
+                value={importHash}
+                onChange={(ev) => setImportHash(ev.target.value)}
+                onKeyDown={(ev) => ev.key === 'Enter' && importLock()}
+                style={{ flex: 1, fontSize: 11, padding: '4px 6px' }}
+                autoFocus
+                spellCheck={false}
+              />
+              <button
+                onClick={importLock}
+                disabled={importing || !importHash}
+                style={{ padding: '4px 10px', fontSize: 11 }}
+              >
+                {importing ? '…' : 'import'}
+              </button>
+              <button
+                onClick={() => { setShowImport(false); setImportErr(null); setImportHash(''); }}
+                className="ghost"
+                style={{ padding: '4px 8px', fontSize: 11 }}
+              >
+                ✕
+              </button>
+            </div>
+            {importErr && (
+              <div className="callout err" style={{ marginTop: 4, fontSize: 10, padding: 6 }}>{importErr}</div>
+            )}
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+              find the hash on <a href="https://octrascan.io" target="_blank" rel="noopener noreferrer">octrascan</a> — only locks sent from your current wallet can be imported.
+            </div>
+          </div>
+        )}
+      </div>
+
       {history.slice(0, 6).map((e) => (
         <div key={e.id} className="callout" style={{ padding: 8, fontSize: 11 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -251,7 +376,7 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
                 </button>
               )}
               <button
-                onClick={() => dismiss(e.id)}
+                onClick={() => dismiss(e)}
                 className="ghost"
                 title="remove from history"
                 style={{ padding: '4px 8px', fontSize: 11 }}
