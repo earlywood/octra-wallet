@@ -36,13 +36,17 @@ export function formatRawAmount(raw: string | bigint): string {
   return frac ? `${whole}.${frac}` : whole.toString();
 }
 
+// wOCT has 6 decimals on Ethereum (matching OCT's native micro-unit), NOT
+// the 18 decimals a typical ERC-20 uses. So 1 OCT in raw form (= 1_000_000
+// micro-OCT) equals 1 wOCT in its smallest unit. These conversions are
+// therefore identity — defined as functions so the assumption lives in one
+// auditable place and call sites remain expressive.
 export function octToWei(microOct: string | bigint): bigint {
-  const m = typeof microOct === 'bigint' ? microOct : BigInt(microOct);
-  return m * 1_000_000_000_000n;
+  return typeof microOct === 'bigint' ? microOct : BigInt(microOct);
 }
 
 export function weiToMicroOct(wei: bigint): bigint {
-  return wei / 1_000_000_000_000n;
+  return wei;
 }
 
 export function encodeBalanceOfCalldata(addr: string): string {
