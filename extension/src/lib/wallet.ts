@@ -66,6 +66,9 @@ export interface Settings {
   explorerUrl: string;
   ethRpcUrl: string;
   claimUrl: string;
+  /** plays the bundled punjabi.mp3 in an offscreen audio host when the user
+   *  hits 'bridge to eth'. defaults to true. */
+  musicEnabled: boolean;
 }
 
 export interface UnlockedSession {
@@ -97,6 +100,7 @@ const DEFAULTS: Settings = {
   explorerUrl: 'https://octrascan.io',
   ethRpcUrl: 'https://ethereum-rpc.publicnode.com',
   claimUrl: 'https://octra.ac420.org/',
+  musicEnabled: true,
 };
 
 export async function getSettings(): Promise<Settings> {

@@ -115,6 +115,22 @@ function NetworkTab() {
 const REPO_URL = 'https://github.com/earlywood/octra-wallet';
 
 function AboutTab() {
+  const [musicOn, setMusicOn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    send<SettingsT>({ kind: 'GET_SETTINGS' }).then((r) => {
+      if (r.ok) setMusicOn(r.data.musicEnabled !== false);
+    });
+  }, []);
+
+  async function toggleMusic() {
+    if (musicOn == null) return;
+    const next = !musicOn;
+    setMusicOn(next); // optimistic
+    await send({ kind: 'SAVE_SETTINGS', settings: { musicEnabled: next } });
+    if (!next) await send({ kind: 'STOP_MUSIC' }); // shut up if it's currently playing
+  }
+
   return (
     <>
       <div style={{ textAlign: 'center', padding: '6px 0 4px' }}>
@@ -139,6 +155,24 @@ function AboutTab() {
         </div>
       </div>
 
+      <div className="callout">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 500, fontSize: 12 }}>funny music</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+              plays a song when you bridge to eth. turn off if your coworkers are nearby.
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`toggle${musicOn ? ' on' : ''}`}
+            onClick={toggleMusic}
+            disabled={musicOn == null}
+            aria-pressed={!!musicOn}
+            aria-label="toggle funny music"
+          />
+        </div>
+      </div>
     </>
   );
 }

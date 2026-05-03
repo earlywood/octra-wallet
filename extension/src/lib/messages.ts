@@ -10,7 +10,7 @@ export type Msg =
   | { kind: 'SEND_TX'; to: string; amountRaw: string; message?: string }
   | { kind: 'BRIDGE_LOCK'; ethRecipient: string; amountRaw: string }
   | { kind: 'GET_SETTINGS' }
-  | { kind: 'SAVE_SETTINGS'; settings: Partial<{ rpcUrl: string; relayerUrl: string; explorerUrl: string; ethRpcUrl: string; claimUrl: string }> }
+  | { kind: 'SAVE_SETTINGS'; settings: Partial<{ rpcUrl: string; relayerUrl: string; explorerUrl: string; ethRpcUrl: string; claimUrl: string; musicEnabled: boolean }> }
   | { kind: 'EXPORT_VAULT'; pin: string }
   | { kind: 'WIPE_VAULT' }
   // multi-account ops (vault must be unlocked)

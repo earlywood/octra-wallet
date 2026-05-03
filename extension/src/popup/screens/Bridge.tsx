@@ -285,7 +285,8 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
     }
     // Fire & forget — start the music in the background offscreen doc so it
     // keeps playing after this popup closes when the new claim tab takes focus.
-    void send({ kind: 'PLAY_MUSIC' });
+    // Skip if user disabled the music toggle in Settings → About.
+    if (settings.musicEnabled !== false) void send({ kind: 'PLAY_MUSIC' });
     setBusy(true);
     const r = await send<{ tx_hash?: string }>({
       kind: 'BRIDGE_LOCK',
