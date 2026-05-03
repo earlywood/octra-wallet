@@ -21,14 +21,26 @@ type Phase = 'wait_lock' | 'wait_header' | 'connect' | 'ready' | 'sim' | 'submit
 
 export function O2EFlow({ params }: { params: O2EParams }) {
   const [phase, setPhase] = useState<Phase>('wait_lock');
-  const [statusMsg, setStatusMsg] = useState('preparing…');
+  const [statusMsg, setStatusMsg] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [epoch, setEpoch] = useState<number | null>(null);
   const [calldata, setCalldata] = useState<string | null>(null);
   const [provider, setProvider] = useState<Eip1193Provider | null>(null);
   const [ethAddr, setEthAddr] = useState<string | null>(null);
   const [claimTx, setClaimTx] = useState<string | null>(null);
+  const [claimSentAt, setClaimSentAt] = useState<number | null>(null);
+  const [lockStartedAt] = useState<number>(() => Date.now());
+  const [headerStartedAt, setHeaderStartedAt] = useState<number | null>(null);
+  const [, setTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  // 1Hz ticker only while a timed step is active
+  const isTimedActive = phase === 'wait_lock' || phase === 'wait_header' || phase === 'wait_claim';
+  useEffect(() => {
+    if (!isTimedActive) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [isTimedActive]);
 
   useEffect(() => {
     drive();
@@ -42,12 +54,11 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     abortRef.current = ac;
     try {
       setPhase('wait_lock');
-      setStatusMsg('waiting for OCT lock tx to confirm on octra…');
       const ep = await pollUntilEpoch(params.rpcUrl, params.lockTx, ac.signal);
       setEpoch(ep);
 
       setPhase('wait_header');
-      setStatusMsg('waiting for relayer to publish bridge header on ethereum (~1–2 min)…');
+      setHeaderStartedAt(Date.now());
       await pollUntilHeader(params.relayerUrl, ep, ac.signal);
       const myMsg = await findOurMessage(params.relayerUrl, ep, params.recipient);
       if (!myMsg) throw new Error('our message was not found in the bridge epoch');
@@ -56,7 +67,6 @@ export function O2EFlow({ params }: { params: O2EParams }) {
       setCalldata(cd);
 
       setPhase('connect');
-      setStatusMsg('header ready. connect your ethereum wallet to claim.');
     } catch (e) {
       if ((e as Error).message === 'aborted') return;
       setErr((e as Error).message);
@@ -74,7 +84,7 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     if (!provider || !ethAddr || !calldata) return;
     setErr(null);
     setPhase('sim');
-    setStatusMsg('simulating claim…');
+    setStatusMsg('');
     let sim = await simulateClaim(provider, ethAddr, calldata);
     if (!sim.ok) {
       if (sim.reason === 'replay') { setPhase('done'); setStatusMsg('already claimed on-chain.'); return; }
@@ -93,7 +103,6 @@ export function O2EFlow({ params }: { params: O2EParams }) {
       }
     }
     setPhase('submit');
-    setStatusMsg('confirm the claim transaction in your wallet…');
     let txHash: string;
     try {
       txHash = await submitClaim(provider, ethAddr, calldata);
@@ -103,8 +112,8 @@ export function O2EFlow({ params }: { params: O2EParams }) {
       return;
     }
     setClaimTx(txHash);
+    setClaimSentAt(Date.now());
     setPhase('wait_claim');
-    setStatusMsg('claim transaction submitted. waiting for confirmation…');
     const r = await waitForReceipt(provider, txHash, 300_000);
     if (!r) { setErr('claim tx not confirmed in 5min. check etherscan.'); setPhase('failed'); return; }
     if (r.status !== '0x1') { setErr('claim tx reverted on-chain.'); setPhase('failed'); return; }
@@ -112,11 +121,40 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     setStatusMsg('claimed! wOCT is now in your ethereum wallet.');
   }
 
+  const LOCK_ETA = 30;
+  const HEADER_ETA = 120;
+  const CLAIM_ETA = 30;
+
+  function elapsedNote(startedAt: number | null, etaSec: number, suffix = ''): string {
+    if (!startedAt) return '';
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    if (elapsed < etaSec) return `~${etaSec - elapsed}s remaining${suffix}`;
+    return `${elapsed}s elapsed${suffix} (typical ${etaSec}s)`;
+  }
+
+  const lockStatus    = epoch != null ? 'done' : phase === 'wait_lock' ? 'active' : 'pending';
+  const headerStatus  = calldata ? 'done' : phase === 'wait_header' ? 'active' : phase === 'failed' && !epoch ? 'pending' : 'pending';
+  const connectStatus = ethAddr ? 'done' : phase === 'connect' ? 'active' : 'pending';
+  const claimStatus   = phase === 'done' ? 'done'
+                      : phase === 'failed' ? 'failed'
+                      : phase === 'sim' || phase === 'submit' || phase === 'wait_claim' ? 'active'
+                      : 'pending';
+
+  const lockNote   = lockStatus    === 'active' ? elapsedNote(lockStartedAt, LOCK_ETA) : undefined;
+  const headerNote = headerStatus  === 'active' ? elapsedNote(headerStartedAt, HEADER_ETA) : undefined;
+  const claimNote  = claimStatus   === 'active'
+                       ? phase === 'sim'        ? 'verifying with ethereum…'
+                       : phase === 'submit'     ? 'confirm in your wallet'
+                       : phase === 'wait_claim' ? `confirming on ethereum · ${elapsedNote(claimSentAt, CLAIM_ETA)}`
+                       : undefined
+                       : claimStatus === 'failed' ? 'see error below'
+                       : undefined;
+
   const steps: StepDef[] = [
-    { id: 'lock',    label: 'OCT lock confirmed on octra',         status: epoch != null ? 'done' : phase === 'wait_lock' ? 'active' : 'pending' },
-    { id: 'header',  label: 'relayer publishes bridge header',     status: calldata ? 'done' : phase === 'wait_header' ? 'active' : 'pending' },
-    { id: 'connect', label: 'connect ethereum wallet',             status: ethAddr ? 'done' : phase === 'connect' ? 'active' : 'pending' },
-    { id: 'claim',   label: 'claim wOCT (eth tx)',                 status: phase === 'sim' || phase === 'submit' || phase === 'wait_claim' ? 'active' : phase === 'done' ? 'done' : phase === 'failed' ? 'failed' : 'pending' },
+    { id: 'lock',    label: 'OCT lock confirmed on octra', status: lockStatus,   note: lockNote },
+    { id: 'header',  label: 'relayer publishes header',    status: headerStatus, note: headerNote },
+    { id: 'connect', label: 'connect wallet',              status: connectStatus },
+    { id: 'claim',   label: 'claim wOCT',                  status: claimStatus,  note: claimNote },
   ];
 
   return (

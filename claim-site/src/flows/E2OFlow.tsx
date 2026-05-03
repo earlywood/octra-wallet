@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Steps, type StepDef } from '../components/Steps';
 import { WalletPicker } from '../components/WalletPicker';
 import { formatRawAmount, octToWei, parseAmountToRaw, weiToMicroOct } from '../lib/bridge';
@@ -25,10 +25,23 @@ export function E2OFlow({ params }: { params: E2OParams }) {
   const [err, setErr] = useState<string | null>(null);
   const [approveTx, setApproveTx] = useState<string | null>(null);
   const [approveOk, setApproveOk] = useState(false);
+  const [approveSentAt, setApproveSentAt] = useState<number | null>(null);
   const [burnTx, setBurnTx] = useState<string | null>(null);
   const [burnOk, setBurnOk] = useState(false);
+  const [burnSentAt, setBurnSentAt] = useState<number | null>(null);
+  const [unlockStartedAt, setUnlockStartedAt] = useState<number | null>(null);
   const [failedAt, setFailedAt] = useState<'approve' | 'burn' | null>(null);
   const [chainOk, setChainOk] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  // 1Hz ticker — only running while a step is actively timing.
+  const isTimedActive = phase === 'approving' || phase === 'burning' || (burnOk && phase !== 'done');
+  useEffect(() => {
+    if (!isTimedActive) return;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [isTimedActive]);
+  void tick; // tick is intentionally unused — we only need it to force re-render
   const [balRpc, setBalRpc] = useState<string | null>(null);
   const [balErr, setBalErr] = useState<string | null>(null);
   const [balLoading, setBalLoading] = useState(false);
@@ -121,6 +134,9 @@ export function E2OFlow({ params }: { params: E2OParams }) {
     setBurnOk(false);
     setApproveTx(null);
     setBurnTx(null);
+    setApproveSentAt(null);
+    setBurnSentAt(null);
+    setUnlockStartedAt(null);
     if (!provider || !ethAddr) return;
     if (octRecip.length !== 47 || !octRecip.startsWith('oct')) { setErr('invalid octra recipient'); return; }
     let amountMicro: string;
@@ -130,7 +146,7 @@ export function E2OFlow({ params }: { params: E2OParams }) {
     if (woctBal != null && amountWei > woctBal) { setErr('insufficient wOCT balance'); return; }
 
     setPhase('approving');
-    setStatusMsg('confirm the wOCT spend approval in your wallet…');
+    setStatusMsg('');
     let aTx: string;
     try {
       aTx = await approveWoct(provider, ethAddr, amountWei);
@@ -141,7 +157,7 @@ export function E2OFlow({ params }: { params: E2OParams }) {
       return;
     }
     setApproveTx(aTx);
-    setStatusMsg('approve tx submitted. waiting for it to confirm on-chain…');
+    setApproveSentAt(Date.now());
     const ar = await waitForReceipt(provider, aTx, 300_000);
     if (!ar) {
       setErr('approve tx not confirmed within 5 min — it may still land later. you can retry once it lands.');
@@ -158,7 +174,6 @@ export function E2OFlow({ params }: { params: E2OParams }) {
     setApproveOk(true);
 
     setPhase('burning');
-    setStatusMsg('confirm the burn transaction in your wallet…');
     let bTx: string;
     try {
       bTx = await burnWoct(provider, ethAddr, amountWei, octRecip);
@@ -169,7 +184,7 @@ export function E2OFlow({ params }: { params: E2OParams }) {
       return;
     }
     setBurnTx(bTx);
-    setStatusMsg('burn tx submitted. waiting for it to confirm on-chain (this is the slow step)…');
+    setBurnSentAt(Date.now());
     const br = await waitForReceipt(provider, bTx, 300_000);
     if (!br) {
       setErr('burn tx not confirmed within 5 min — check etherscan; it may still land later.');
@@ -184,6 +199,7 @@ export function E2OFlow({ params }: { params: E2OParams }) {
       return;
     }
     setBurnOk(true);
+    setUnlockStartedAt(Date.now());
 
     setPhase('done');
     setStatusMsg('burn confirmed. the relayer auto-unlocks OCT on octra in ~1–2 min — check your octra wallet to confirm receipt.');
@@ -202,18 +218,54 @@ export function E2OFlow({ params }: { params: E2OParams }) {
       if (phase === 'burning' && approveOk) return 'active';
       return 'pending';
     }
-    // unlock
     if (phase === 'done') return 'done';
     if (failedAt) return 'pending';
     if (burnOk) return 'active';
     return 'pending';
   };
 
+  // ETH mainnet block ~12s; one block of finality is what most wallets show as
+  // "confirmed". 30s is a comfortable typical for a single confirmation.
+  const ETH_TX_ETA = 30;
+  const RELAYER_ETA = 120;
+
+  function timeNote(sentAt: number | null, etaSec: number): string {
+    if (!sentAt) return '';
+    const elapsed = Math.floor((Date.now() - sentAt) / 1000);
+    if (elapsed < etaSec) return `confirming on ethereum · ~${etaSec - elapsed}s remaining`;
+    return `confirming on ethereum · ${elapsed}s elapsed`;
+  }
+  function relayerNote(sentAt: number | null, etaSec: number): string {
+    if (!sentAt) return '';
+    const elapsed = Math.floor((Date.now() - sentAt) / 1000);
+    if (elapsed < etaSec) return `~${etaSec - elapsed}s remaining (typical ${etaSec}s)`;
+    return `${elapsed}s elapsed (typical ${etaSec}s — may take longer)`;
+  }
+
+  const noteFor = (id: 'connect' | 'approve' | 'burn' | 'unlock'): string | undefined => {
+    const st = id === 'connect'
+      ? (ethAddr ? 'done' : 'active')
+      : stepStatus(id);
+    if (st === 'pending') return undefined;
+    if (st === 'failed') {
+      if (id === 'approve') return 'approve failed — see below';
+      if (id === 'burn')    return 'burn failed — see below';
+      return undefined;
+    }
+    if (st === 'done') return undefined;
+    // active
+    if (id === 'connect') return undefined;
+    if (id === 'approve') return approveTx ? timeNote(approveSentAt, ETH_TX_ETA) : 'approve in your wallet';
+    if (id === 'burn')    return burnTx    ? timeNote(burnSentAt,    ETH_TX_ETA) : 'confirm burn in your wallet';
+    if (id === 'unlock')  return relayerNote(unlockStartedAt, RELAYER_ETA);
+    return undefined;
+  };
+
   const steps: StepDef[] = [
-    { id: 'connect', label: 'connect ethereum wallet',                  status: ethAddr ? 'done' : 'active' },
-    { id: 'approve', label: 'approve wOCT spend',                       status: stepStatus('approve') },
-    { id: 'burn',    label: 'burn wOCT',                                status: stepStatus('burn') },
-    { id: 'unlock',  label: 'relayer unlocks OCT (automatic)',          status: stepStatus('unlock') },
+    { id: 'connect', label: 'connect wallet',     status: ethAddr ? 'done' : 'active', note: noteFor('connect') },
+    { id: 'approve', label: 'approve wOCT',       status: stepStatus('approve'),       note: noteFor('approve') },
+    { id: 'burn',    label: 'burn wOCT',          status: stepStatus('burn'),          note: noteFor('burn') },
+    { id: 'unlock',  label: 'OCT unlocks on octra', status: stepStatus('unlock'),     note: noteFor('unlock') },
   ];
 
   return (

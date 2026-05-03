@@ -72,8 +72,12 @@ label {
 .steps li.active .marker { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px rgba(58,115,255,0.08); }
 .steps li.done .marker { border-color: var(--ok); color: var(--ok); background: rgba(63,186,100,0.1); }
 .steps li.failed .marker { border-color: var(--err); color: var(--err); background: rgba(228,48,52,0.08); }
+.steps .step-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .steps .label { color: var(--muted); }
+.steps .note { font-size: 11.5px; color: var(--muted); opacity: 0.75; }
 .steps li.active .label, .steps li.done .label { color: var(--text); }
+.steps li.active .note { color: var(--accent); opacity: 1; }
+.steps li.failed .note { color: var(--err); opacity: 1; }
 
 .kv { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; font-size: 13px; }
 .kv .k { color: var(--muted); }

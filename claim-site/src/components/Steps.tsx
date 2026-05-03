@@ -1,5 +1,5 @@
 export type StepStatus = 'pending' | 'active' | 'done' | 'failed';
-export interface StepDef { id: string; label: string; status: StepStatus }
+export interface StepDef { id: string; label: string; status: StepStatus; note?: string }
 
 export function Steps({ steps }: { steps: StepDef[] }) {
   return (
@@ -9,7 +9,10 @@ export function Steps({ steps }: { steps: StepDef[] }) {
           <span className="marker">
             {s.status === 'done' ? '✓' : s.status === 'failed' ? '✕' : s.status === 'active' ? <span className="spinner" /> : ''}
           </span>
-          <span className="label">{s.label}</span>
+          <div className="step-text">
+            <span className="label">{s.label}</span>
+            {s.note && <span className="note">{s.note}</span>}
+          </div>
         </li>
       ))}
     </ul>
