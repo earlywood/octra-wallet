@@ -44,6 +44,7 @@ export function App() {
               missing parameters. this page is opened by the Octra Wallet extension after a lock — start your bridge from the extension.
             </div>
           </div>
+          <Footer />
         </div>
       );
     }
@@ -61,6 +62,7 @@ export function App() {
       <div className="shell">
         <Header subtitle="claim wOCT after locking OCT" />
         <O2EFlow params={params} />
+        <Footer />
       </div>
     );
   }
@@ -76,6 +78,15 @@ export function App() {
     <div className="shell">
       <Header subtitle="burn wOCT to unlock OCT" />
       <E2OFlow params={params} />
+      <Footer />
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <div style={{ marginTop: 32, fontSize: 11, color: 'var(--muted)', textAlign: 'center', opacity: 0.6 }}>
+      build {__BUILD_HASH__} · {__BUILD_TIME__} UTC
     </div>
   );
 }

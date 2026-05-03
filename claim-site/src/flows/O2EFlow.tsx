@@ -90,6 +90,24 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Retry helper — many transient relayer errors ('Failed to fetch', edge
+  // node hiccups, brief 502s) resolve on the next attempt. Without this, a
+  // single bad request strands the whole flow at 'header never published'.
+  async function retry<T>(label: string, fn: () => Promise<T>, signal: AbortSignal, attempts = 8): Promise<T> {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      if (signal.aborted) throw new Error('aborted');
+      try {
+        return await fn();
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[octra-bridge] ${label} attempt ${i + 1}/${attempts} failed:`, e);
+        if (i < attempts - 1) await sleep(2_000 + i * 1_500, signal);
+      }
+    }
+    throw new Error(`${label} failed after ${attempts} retries: ${(lastErr as Error)?.message ?? lastErr}`);
+  }
+
   async function drive() {
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -104,8 +122,6 @@ export function O2EFlow({ params }: { params: O2EParams }) {
       const wait = await waitForHeader(params.relayerUrl, ep, params.recipient, params.lockTx, ac.signal);
 
       if (wait.source === 'already_claimed') {
-        // recovery.json says the relayer scanned past our epoch and our msg
-        // isn't in the unclaimed list — it's been claimed already.
         setPhase('done');
         setStatusMsg('this lock has already been claimed on ethereum.');
         return;
@@ -113,22 +129,35 @@ export function O2EFlow({ params }: { params: O2EParams }) {
 
       let leafIndex: number;
       if (wait.source === 'recovery') {
-        // fast path: recovery.json gave us the leaf_index directly,
-        // no need to call bridgeMessagesByEpoch (which can be cache-stuck too)
         leafIndex = wait.leafIndex;
       } else {
-        const myMsg = await findOurMessage(params.relayerUrl, ep, params.recipient);
-        if (!myMsg) throw new Error('our message was not found in the bridge epoch');
+        const myMsg = await retry(
+          'bridgeMessagesByEpoch',
+          async () => {
+            const m = await findOurMessage(params.relayerUrl, ep, params.recipient);
+            if (!m) throw new Error('our message was not found in the bridge epoch (yet)');
+            return m;
+          },
+          ac.signal,
+        );
         leafIndex = myMsg.leaf_index;
       }
 
-      const cd = await getClaimCalldata(params.relayerUrl, ep, leafIndex);
-      if (!cd) throw new Error('relayer did not return claim calldata');
+      const cd = await retry(
+        'bridgeClaimCalldata',
+        async () => {
+          const c = await getClaimCalldata(params.relayerUrl, ep, leafIndex);
+          if (!c) throw new Error('relayer returned null calldata');
+          return c;
+        },
+        ac.signal,
+      );
       setCalldata(cd);
 
       setPhase('connect');
     } catch (e) {
       if ((e as Error).message === 'aborted') return;
+      console.error('[octra-bridge] drive() failed:', e);
       setErr((e as Error).message);
       setPhase('failed');
     }
