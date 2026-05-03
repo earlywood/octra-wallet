@@ -6,6 +6,7 @@ import { Receive } from './Receive';
 import { Bridge } from './Bridge';
 import { Settings } from './Settings';
 import { AddAccount } from './AddAccount';
+import { History } from './History';
 import { AccountSwitcher, type AccountSummary } from '../AccountSwitcher';
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
   onAccountChanged: () => void;
 }
 
-type Tab = 'home' | 'send' | 'receive' | 'bridge' | 'settings' | 'add-account';
+type Tab = 'home' | 'send' | 'receive' | 'bridge' | 'settings' | 'history' | 'add-account';
 
 function shortAddr(a: string) { return a.slice(0, 8) + '…' + a.slice(-6); }
 
@@ -94,7 +95,8 @@ export function Home({ active, accounts, onLock, onAccountChanged }: Props) {
         <button className={tab === 'send' ? 'active' : ''} onClick={() => setTab('send')}>send</button>
         <button className={tab === 'receive' ? 'active' : ''} onClick={() => setTab('receive')}>receive</button>
         <button className={tab === 'bridge' ? 'active' : ''} onClick={() => setTab('bridge')}>bridge</button>
-        <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>⚙</button>
+        <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')} title="settings" style={{ flex: '0 0 auto', padding: '10px 8px' }}>⚙</button>
+        <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')} title="history" style={{ flex: '0 0 auto', padding: '10px 8px' }}>📖</button>
       </div>
 
       <div className="content">
@@ -116,6 +118,7 @@ export function Home({ active, accounts, onLock, onAccountChanged }: Props) {
         {tab === 'receive' && <Receive address={address} />}
         {tab === 'bridge' && <Bridge address={address} balanceRaw={balance} onLockDone={loadBalance} />}
         {tab === 'settings' && <Settings onAccountsChanged={onAccountChanged} />}
+        {tab === 'history' && <History address={address} />}
         {tab === 'add-account' && (
           <AddAccount
             onDone={() => { setTab('home'); onAccountChanged(); }}
