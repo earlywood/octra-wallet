@@ -62,14 +62,19 @@ export function encodeApproveCalldata(spender: string, amountWei: bigint): strin
   return sel + spenderHex + amountHex;
 }
 
+// Bridge.burn signature is `burn(string recipient, uint256 amount)` — string
+// first, uint second. Solidity ABI for a dynamic-then-static head: a 32-byte
+// offset pointing past the head (always 0x40 since head = offset + uint = 64
+// bytes), then the uint256 inline, then the string's length and data after
+// the head. Mirrors webcli/static/bridge.html's `abiEncodeStringUint(str, uint)`.
 export function encodeBurnCalldata(amountWei: bigint, octraRecipient: string): string {
-  const amountHex = amountWei.toString(16).padStart(64, '0');
   const offsetHex = (64).toString(16).padStart(64, '0');
+  const amountHex = amountWei.toString(16).padStart(64, '0');
   const bytes = new TextEncoder().encode(octraRecipient);
   const lenHex = bytes.length.toString(16).padStart(64, '0');
   let dataHex = '';
   for (const b of bytes) dataHex += b.toString(16).padStart(2, '0');
   const padLen = Math.ceil(bytes.length / 32) * 32;
   dataHex = dataHex.padEnd(padLen * 2, '0');
-  return BURN_SELECTOR + amountHex + offsetHex + lenHex + dataHex;
+  return BURN_SELECTOR + offsetHex + amountHex + lenHex + dataHex;
 }

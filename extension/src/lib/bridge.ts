@@ -68,16 +68,18 @@ export async function lockOctToEth(args: {
   return { ok: true, tx_hash: r.result?.tx_hash };
 }
 
+// Bridge.burn signature is `burn(string recipient, uint256 amount)` — string
+// first, uint second. See claim-site/src/lib/bridge.ts for the rationale.
 function abiEncodeBurn(amountWei: bigint, octraRecipient: string): string {
-  const amountHex = amountWei.toString(16).padStart(64, '0');
   const offsetHex = (64).toString(16).padStart(64, '0');
+  const amountHex = amountWei.toString(16).padStart(64, '0');
   const bytes = new TextEncoder().encode(octraRecipient);
   const lenHex = bytes.length.toString(16).padStart(64, '0');
   let dataHex = '';
   for (const b of bytes) dataHex += b.toString(16).padStart(2, '0');
   const padLen = Math.ceil(bytes.length / 32) * 32;
   dataHex = dataHex.padEnd(padLen * 2, '0');
-  return amountHex + offsetHex + lenHex + dataHex;
+  return offsetHex + amountHex + lenHex + dataHex;
 }
 
 export function encodeBurnCalldata(amountWei: bigint, octraRecipient: string): string {

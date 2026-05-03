@@ -24,7 +24,10 @@ export function E2OFlow({ params }: { params: E2OParams }) {
   const [statusMsg, setStatusMsg] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [approveTx, setApproveTx] = useState<string | null>(null);
+  const [approveOk, setApproveOk] = useState(false);
   const [burnTx, setBurnTx] = useState<string | null>(null);
+  const [burnOk, setBurnOk] = useState(false);
+  const [failedAt, setFailedAt] = useState<'approve' | 'burn' | null>(null);
   const [chainOk, setChainOk] = useState(false);
   const [balRpc, setBalRpc] = useState<string | null>(null);
   const [balErr, setBalErr] = useState<string | null>(null);
@@ -113,6 +116,11 @@ export function E2OFlow({ params }: { params: E2OParams }) {
 
   async function start() {
     setErr(null);
+    setFailedAt(null);
+    setApproveOk(false);
+    setBurnOk(false);
+    setApproveTx(null);
+    setBurnTx(null);
     if (!provider || !ethAddr) return;
     if (octRecip.length !== 47 || !octRecip.startsWith('oct')) { setErr('invalid octra recipient'); return; }
     let amountMicro: string;
@@ -121,36 +129,91 @@ export function E2OFlow({ params }: { params: E2OParams }) {
     const amountWei = octToWei(amountMicro);
     if (woctBal != null && amountWei > woctBal) { setErr('insufficient wOCT balance'); return; }
 
+    setPhase('approving');
+    setStatusMsg('confirm the wOCT spend approval in your wallet…');
+    let aTx: string;
     try {
-      setPhase('approving');
-      setStatusMsg('confirm the wOCT spend approval in your wallet…');
-      const aTx = await approveWoct(provider, ethAddr, amountWei);
-      setApproveTx(aTx);
-      setStatusMsg('waiting for approve tx to confirm…');
-      const ar = await waitForReceipt(provider, aTx, 300_000);
-      if (!ar || ar.status !== '0x1') throw new Error('approve tx failed or dropped');
-
-      setPhase('burning');
-      setStatusMsg('confirm the burn transaction in your wallet…');
-      const bTx = await burnWoct(provider, ethAddr, amountWei, octRecip);
-      setBurnTx(bTx);
-      setStatusMsg('waiting for burn tx to confirm…');
-      const br = await waitForReceipt(provider, bTx, 300_000);
-      if (!br || br.status !== '0x1') throw new Error('burn tx failed or dropped');
-
-      setPhase('done');
-      setStatusMsg('burn confirmed. the relayer auto-unlocks OCT on octra in ~1–2 min — check your octra wallet to confirm receipt.');
+      aTx = await approveWoct(provider, ethAddr, amountWei);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(`approve declined or failed to send: ${(e as Error).message}`);
+      setFailedAt('approve');
       setPhase('failed');
+      return;
     }
+    setApproveTx(aTx);
+    setStatusMsg('approve tx submitted. waiting for it to confirm on-chain…');
+    const ar = await waitForReceipt(provider, aTx, 300_000);
+    if (!ar) {
+      setErr('approve tx not confirmed within 5 min — it may still land later. you can retry once it lands.');
+      setFailedAt('approve');
+      setPhase('failed');
+      return;
+    }
+    if (ar.status !== '0x1') {
+      setErr('approve tx reverted on-chain. view it on etherscan for details.');
+      setFailedAt('approve');
+      setPhase('failed');
+      return;
+    }
+    setApproveOk(true);
+
+    setPhase('burning');
+    setStatusMsg('confirm the burn transaction in your wallet…');
+    let bTx: string;
+    try {
+      bTx = await burnWoct(provider, ethAddr, amountWei, octRecip);
+    } catch (e) {
+      setErr(`burn declined or failed to send: ${(e as Error).message}`);
+      setFailedAt('burn');
+      setPhase('failed');
+      return;
+    }
+    setBurnTx(bTx);
+    setStatusMsg('burn tx submitted. waiting for it to confirm on-chain (this is the slow step)…');
+    const br = await waitForReceipt(provider, bTx, 300_000);
+    if (!br) {
+      setErr('burn tx not confirmed within 5 min — check etherscan; it may still land later.');
+      setFailedAt('burn');
+      setPhase('failed');
+      return;
+    }
+    if (br.status !== '0x1') {
+      setErr('burn tx reverted on-chain. wOCT was NOT burned. view on etherscan for the revert reason; you can retry.');
+      setFailedAt('burn');
+      setPhase('failed');
+      return;
+    }
+    setBurnOk(true);
+
+    setPhase('done');
+    setStatusMsg('burn confirmed. the relayer auto-unlocks OCT on octra in ~1–2 min — check your octra wallet to confirm receipt.');
   }
 
+  const stepStatus = (id: 'approve' | 'burn' | 'unlock') => {
+    if (id === 'approve') {
+      if (failedAt === 'approve') return 'failed';
+      if (approveOk) return 'done';
+      if (phase === 'approving') return 'active';
+      return 'pending';
+    }
+    if (id === 'burn') {
+      if (failedAt === 'burn') return 'failed';
+      if (burnOk) return 'done';
+      if (phase === 'burning' && approveOk) return 'active';
+      return 'pending';
+    }
+    // unlock
+    if (phase === 'done') return 'done';
+    if (failedAt) return 'pending';
+    if (burnOk) return 'active';
+    return 'pending';
+  };
+
   const steps: StepDef[] = [
-    { id: 'connect', label: 'connect ethereum wallet', status: ethAddr ? 'done' : 'active' },
-    { id: 'approve', label: 'approve wOCT spend',     status: approveTx ? 'done' : phase === 'approving' ? 'active' : 'pending' },
-    { id: 'burn',    label: 'burn wOCT',              status: burnTx ? 'done' : phase === 'burning' ? 'active' : 'pending' },
-    { id: 'unlock',  label: 'relayer unlocks OCT (automatic)', status: phase === 'done' ? 'done' : phase === 'failed' ? 'failed' : burnTx ? 'active' : 'pending' },
+    { id: 'connect', label: 'connect ethereum wallet',                  status: ethAddr ? 'done' : 'active' },
+    { id: 'approve', label: 'approve wOCT spend',                       status: stepStatus('approve') },
+    { id: 'burn',    label: 'burn wOCT',                                status: stepStatus('burn') },
+    { id: 'unlock',  label: 'relayer unlocks OCT (automatic)',          status: stepStatus('unlock') },
   ];
 
   return (
@@ -227,6 +290,16 @@ export function E2OFlow({ params }: { params: E2OParams }) {
             </div>
           )}
           {err && <div className="callout err" style={{ marginTop: 10 }}>{err}</div>}
+          {failedAt === 'burn' && burnTx && (
+            <div className="callout err" style={{ marginTop: 10, fontSize: 12 }}>
+              <a href={`https://etherscan.io/tx/${burnTx}`} target="_blank" rel="noopener noreferrer">view failed burn tx on etherscan →</a>
+            </div>
+          )}
+          {failedAt === 'approve' && approveTx && (
+            <div className="callout err" style={{ marginTop: 10, fontSize: 12 }}>
+              <a href={`https://etherscan.io/tx/${approveTx}`} target="_blank" rel="noopener noreferrer">view failed approve tx on etherscan →</a>
+            </div>
+          )}
           {phase === 'failed' && <button onClick={start} style={{ marginTop: 10 }}>retry</button>}
         </div>
       )}
