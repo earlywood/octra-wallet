@@ -1,5 +1,5 @@
 import { getOctraTxStatus } from './octraRpc';
-import { relayerCall, type BridgeHeaderResult } from './relayer';
+import { fetchRecovery, findLockInRecovery, relayerCall, type BridgeHeaderResult } from './relayer';
 
 export class LockRejectedError extends Error {
   reason: string;
@@ -29,11 +29,55 @@ export async function pollUntilEpoch(rpcUrl: string, txHash: string, signal: Abo
   throw new Error('lock tx not finalized within 5min');
 }
 
-// No timeout. The relayer is third-party infra we don't control; if it's
-// backed up, throwing 'timed out' just punishes the user for waiting and
-// loses the in-flight state. Instead poll forever until the abort signal
-// fires (component unmounts / user closes tab). Adaptive backoff keeps us
-// from hammering the relayer once we're past the typical ETA window.
+// Two parallel signals — whichever fires first wins:
+//   (a) bridgeHeader RPC returns message_count > 0
+//   (b) recovery.json contains our lock tx_hash (gives us epoch + leaf_index
+//       directly, lets us skip bridgeMessagesByEpoch entirely)
+// recovery.json sits on a different cache path than the JSON-RPC endpoints,
+// so when bridgeHeader is stuck on a stale empty cache, this still resolves.
+export type WaitForHeaderResult =
+  | { source: 'header'; epoch: number }
+  | { source: 'recovery'; epoch: number; leafIndex: number }
+  | { source: 'already_claimed' };
+
+export async function waitForHeader(
+  relayerUrl: string,
+  epoch: number,
+  ethRecipient: string,
+  lockTxHash: string,
+  signal: AbortSignal,
+): Promise<WaitForHeaderResult> {
+  const start = Date.now();
+
+  const headerLoop = (async (): Promise<WaitForHeaderResult> => {
+    while (true) {
+      if (signal.aborted) throw new Error('aborted');
+      const r = await relayerCall<BridgeHeaderResult>(relayerUrl, 'bridgeHeader', [epoch]);
+      if (r.ok && r.result && (r.result.message_count ?? 0) > 0) return { source: 'header', epoch };
+      const elapsedSec = (Date.now() - start) / 1000;
+      const intervalMs = elapsedSec < 120 ? 5_000 : elapsedSec < 600 ? 15_000 : 60_000;
+      await sleep(intervalMs, signal);
+    }
+  })();
+
+  const recoveryLoop = (async (): Promise<WaitForHeaderResult> => {
+    while (true) {
+      if (signal.aborted) throw new Error('aborted');
+      const doc = await fetchRecovery(relayerUrl, signal);
+      if (doc) {
+        const lookup = findLockInRecovery(doc, ethRecipient, lockTxHash, epoch);
+        if (lookup.kind === 'found')           return { source: 'recovery', epoch: lookup.epoch, leafIndex: lookup.leaf_index };
+        if (lookup.kind === 'already_claimed') return { source: 'already_claimed' };
+      }
+      // recovery.json is regenerated every 30s server-side, so no point polling faster
+      await sleep(15_000, signal);
+    }
+  })();
+
+  return Promise.race([headerLoop, recoveryLoop]);
+}
+
+// kept exported for any callers that only want the bridgeHeader signal
 export async function pollUntilHeader(relayerUrl: string, epoch: number, signal: AbortSignal): Promise<BridgeHeaderResult> {
   const start = Date.now();
   while (true) {
@@ -41,9 +85,7 @@ export async function pollUntilHeader(relayerUrl: string, epoch: number, signal:
     const r = await relayerCall<BridgeHeaderResult>(relayerUrl, 'bridgeHeader', [epoch]);
     if (r.ok && r.result && (r.result.message_count ?? 0) > 0) return r.result;
     const elapsedSec = (Date.now() - start) / 1000;
-    const intervalMs = elapsedSec < 120 ? 5_000      // first 2 min: every 5s
-                    :  elapsedSec < 600 ? 15_000     // 2–10 min: every 15s
-                    :  60_000;                        // beyond that: every 60s
+    const intervalMs = elapsedSec < 120 ? 5_000 : elapsedSec < 600 ? 15_000 : 60_000;
     await sleep(intervalMs, signal);
   }
 }

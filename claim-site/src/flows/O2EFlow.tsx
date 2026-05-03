@@ -3,7 +3,7 @@ import { Steps, type StepDef } from '../components/Steps';
 import { WalletPicker } from '../components/WalletPicker';
 import { formatRawAmount } from '../lib/bridge';
 import { findOurMessage, getClaimCalldata, relayerCall } from '../lib/relayer';
-import { pollUntilEpoch, pollUntilHeader, sleep } from '../lib/flow';
+import { pollUntilEpoch, sleep, waitForHeader } from '../lib/flow';
 import { simulateClaim, submitClaim, waitForReceipt, type Eip1193Provider } from '../lib/eth';
 
 export interface O2EParams {
@@ -77,10 +77,28 @@ export function O2EFlow({ params }: { params: O2EParams }) {
 
       setPhase('wait_header');
       setHeaderStartedAt(Date.now());
-      await pollUntilHeader(params.relayerUrl, ep, ac.signal);
-      const myMsg = await findOurMessage(params.relayerUrl, ep, params.recipient);
-      if (!myMsg) throw new Error('our message was not found in the bridge epoch');
-      const cd = await getClaimCalldata(params.relayerUrl, ep, myMsg.leaf_index);
+      const wait = await waitForHeader(params.relayerUrl, ep, params.recipient, params.lockTx, ac.signal);
+
+      if (wait.source === 'already_claimed') {
+        // recovery.json says the relayer scanned past our epoch and our msg
+        // isn't in the unclaimed list — it's been claimed already.
+        setPhase('done');
+        setStatusMsg('this lock has already been claimed on ethereum.');
+        return;
+      }
+
+      let leafIndex: number;
+      if (wait.source === 'recovery') {
+        // fast path: recovery.json gave us the leaf_index directly,
+        // no need to call bridgeMessagesByEpoch (which can be cache-stuck too)
+        leafIndex = wait.leafIndex;
+      } else {
+        const myMsg = await findOurMessage(params.relayerUrl, ep, params.recipient);
+        if (!myMsg) throw new Error('our message was not found in the bridge epoch');
+        leafIndex = myMsg.leaf_index;
+      }
+
+      const cd = await getClaimCalldata(params.relayerUrl, ep, leafIndex);
       if (!cd) throw new Error('relayer did not return claim calldata');
       setCalldata(cd);
 
