@@ -331,6 +331,11 @@ export async function renameAccount(id: string, label: string): Promise<AccountP
   if (!acc) throw new Error('account not found');
   acc.label = trimmed;
   await writeVaultV2(plain, pin);
+  // CRITICAL: refresh the session's meta cache too. listAccountsPublic
+  // reads from session.meta (perf optimisation) so without this the popup
+  // keeps showing the old label even though the encrypted vault has the
+  // new one. every other write op already does this; this one was missed.
+  await setSession(plainToSession(plain, pin));
   return toPublic(acc);
 }
 
