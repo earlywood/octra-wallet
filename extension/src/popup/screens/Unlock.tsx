@@ -19,7 +19,7 @@ export function Unlock({ onUnlock }: Props) {
   }
 
   async function wipe() {
-    if (!confirm('wipe wallet from this browser? you will need your seed phrase to restore.')) return;
+    if (!confirm('wipe wallet from this browser?\n\nthis clears your encrypted vault AND your local bridge history. on-chain funds are unaffected. you will need your seed phrase to restore the wallet.')) return;
     await send({ kind: 'WIPE_VAULT' });
     onUnlock();
   }

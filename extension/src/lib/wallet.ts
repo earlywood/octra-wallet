@@ -8,6 +8,7 @@ import {
   keypairFromMnemonic,
   keypairFromPrivateKeyB64,
 } from './crypto';
+import { clearAllBridges } from './bridgeStore';
 
 const VAULT_KEY_V1 = 'octra:vault:v1';      // legacy single-account vault
 const VAULT_KEY    = 'octra:vault:v2';      // current multi-account vault
@@ -154,6 +155,9 @@ async function writeVaultV2(plain: VaultPlaintextV2, pin: string): Promise<Vault
 export async function destroyVault(): Promise<void> {
   await chrome.storage.local.remove([VAULT_KEY, VAULT_KEY_V1]);
   await chrome.storage.session.remove(SESSION_KEY);
+  // also drop bridge entries — they're tied to old account addresses and
+  // would be orphaned (and misleading) for a freshly-created next wallet.
+  await clearAllBridges();
 }
 
 // ---------------- session ----------------
