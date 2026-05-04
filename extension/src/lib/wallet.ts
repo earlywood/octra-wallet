@@ -8,7 +8,6 @@ import {
   keypairFromMnemonic,
   keypairFromPrivateKeyB64,
 } from './crypto';
-import { clearAllBridges } from './bridgeStore';
 
 const VAULT_KEY_V1 = 'octra:vault:v1';      // legacy single-account vault
 const VAULT_KEY    = 'octra:vault:v2';      // current multi-account vault
@@ -153,11 +152,13 @@ async function writeVaultV2(plain: VaultPlaintextV2, pin: string): Promise<Vault
 }
 
 export async function destroyVault(): Promise<void> {
-  await chrome.storage.local.remove([VAULT_KEY, VAULT_KEY_V1]);
-  await chrome.storage.session.remove(SESSION_KEY);
-  // also drop bridge entries — they're tied to old account addresses and
-  // would be orphaned (and misleading) for a freshly-created next wallet.
-  await clearAllBridges();
+  // Comprehensive wipe — clear() nukes EVERYTHING in the extension's
+  // chrome.storage namespace, not just the specific keys we know about.
+  // Stronger guarantee against any latent state we forgot to track (or
+  // browser storage glitches that could leave stale entries behind).
+  // Settings get reset too — small price for a true clean slate.
+  await chrome.storage.local.clear();
+  await chrome.storage.session.clear();
 }
 
 // ---------------- session ----------------
@@ -392,11 +393,22 @@ function nextDefaultLabel(plain: VaultPlaintextV2): string {
   return `Account ${n}`;
 }
 
+function logGen(label: string, mnemonic: string, address: string, hdIndex: number) {
+  // Discreet diagnostic — logs the address + the first two mnemonic words
+  // (enough to verify uniqueness across runs without putting the full seed
+  // in console history). If two consecutive 'wipe → create → generate'
+  // cycles ever produce the SAME first-two-words prefix, that's evidence
+  // of an entropy bug worth chasing.
+  const prefix = mnemonic.split(' ').slice(0, 2).join(' ');
+  console.info(`[octra-wallet] ${label}`, { address, hdIndex, mnemonicPrefix: `${prefix}…` });
+}
+
 /** Initial vault creation — only for the first-ever wallet (when nothing exists). */
 export async function createInitialWallet(pin: string): Promise<{ address: string; mnemonic: string }> {
   if (await hasVault()) throw new Error('vault already exists');
   const mnemonic = generateMnemonic12();
   const kp = keypairFromMnemonic(mnemonic, 0, 2);
+  logGen('createInitialWallet', mnemonic, kp.address, 0);
   const id = newAccountId();
   const plain: VaultPlaintextV2 = {
     version: 2,
@@ -487,6 +499,7 @@ export async function addGeneratedAccount(label?: string): Promise<{ account: Ac
     returnedMnemonic = mnemonic;
   }
   const kp = keypairFromMnemonic(mnemonic, hdIndex, 2);
+  logGen('addGeneratedAccount', mnemonic, kp.address, hdIndex);
   if (plain.accounts.some((a) => a.address === kp.address)) {
     throw new Error('this account already exists in your wallet');
   }
