@@ -1,15 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Steps, type StepDef } from '../components/Steps';
 import { WalletPicker } from '../components/WalletPicker';
 import { formatRawAmount, octToWei, parseAmountToRaw, weiToMicroOct } from '../lib/bridge';
 import { approveWoct, burnWoct, ensureMainnet, getChainId, getWoctBalance, waitForReceipt, type Eip1193Provider } from '../lib/eth';
 import { DEFAULT_OCTRA_EXPLORER } from '../lib/bridge';
+import { isValidOctraAddress } from '../../../shared/address';
+import { closeMyTab, notifyBurnLanded } from '../lib/extensionBridge';
 
 export interface E2OParams {
   rpcUrl: string;
   ethRpcUrl: string;
   octraRecipient?: string;
   suggestedAmount?: string; // micro-OCT
+  /** chrome.runtime.id of the wallet extension that opened this tab. Used
+   *  to ping the popup when the burn lands so its history updates instantly. */
+  extId?: string;
+  bridgeId?: string;
 }
 
 type Phase = 'connect' | 'setup' | 'approving' | 'burning' | 'done' | 'failed';
@@ -45,6 +51,22 @@ export function E2OFlow({ params }: { params: E2OParams }) {
   const [balRpc, setBalRpc] = useState<string | null>(null);
   const [balErr, setBalErr] = useState<string | null>(null);
   const [balLoading, setBalLoading] = useState(false);
+
+  // Track the listeners we attach to the wallet provider so we can detach
+  // them on unmount (or on reconnect). Without this, every wallet
+  // disconnect+reconnect cycle stacks another listener on each event, which
+  // eventually fires N copies of the same handler per change.
+  const listenersRef = useRef<{ provider: Eip1193Provider; chainChanged: (...a: unknown[]) => void; accountsChanged: (...a: unknown[]) => void } | null>(null);
+  function detachListeners() {
+    const cur = listenersRef.current;
+    if (!cur) return;
+    try {
+      cur.provider.removeListener?.('chainChanged', cur.chainChanged);
+      cur.provider.removeListener?.('accountsChanged', cur.accountsChanged);
+    } catch { /* provider may have been GC'd */ }
+    listenersRef.current = null;
+  }
+  useEffect(() => () => detachListeners(), []);
 
   async function loadBalance(addr: string) {
     setBalLoading(true);
@@ -86,17 +108,20 @@ export function E2OFlow({ params }: { params: E2OParams }) {
       setChainOk(false);
     }
 
+    // Detach any previously-attached listeners (different provider, or same
+    // provider after a disconnect/reconnect cycle) before registering fresh.
+    detachListeners();
     if (p.on) {
-      p.on('chainChanged', async () => {
+      const chainChanged = async () => {
         try {
           const cur = await getChainId(p);
           setChainOk(cur === 1);
           if (cur === 1) setErr(null);
         } catch { /* ignore */ }
-      });
+      };
       // CRITICAL: re-read balance if user switches accounts in the wallet
       // after connect — otherwise we keep showing the first account's balance.
-      p.on('accountsChanged', async (...args: unknown[]) => {
+      const accountsChanged = async (...args: unknown[]) => {
         const accts = args[0] as string[] | undefined;
         const next = accts?.[0];
         if (next) {
@@ -108,7 +133,10 @@ export function E2OFlow({ params }: { params: E2OParams }) {
           setWoctBal(null);
           setPhase('connect');
         }
-      });
+      };
+      p.on('chainChanged', chainChanged);
+      p.on('accountsChanged', accountsChanged);
+      listenersRef.current = { provider: p, chainChanged, accountsChanged };
     }
   }
 
@@ -138,7 +166,7 @@ export function E2OFlow({ params }: { params: E2OParams }) {
     setBurnSentAt(null);
     setUnlockStartedAt(null);
     if (!provider || !ethAddr) return;
-    if (octRecip.length !== 47 || !octRecip.startsWith('oct')) { setErr('invalid octra recipient'); return; }
+    if (!isValidOctraAddress(octRecip)) { setErr('invalid octra recipient'); return; }
     let amountMicro: string;
     try { amountMicro = parseAmountToRaw(amount); } catch { setErr('invalid amount'); return; }
     if (BigInt(amountMicro) <= 0n) { setErr('amount must be > 0'); return; }
@@ -200,6 +228,10 @@ export function E2OFlow({ params }: { params: E2OParams }) {
     }
     setBurnOk(true);
     setUnlockStartedAt(Date.now());
+    // Ping the extension popup (best-effort) so its e2o entry — if any —
+    // flips to burn_confirmed. The actual OCT-side unlock by the relayer
+    // happens a minute or two later and isn't tracked in the popup yet.
+    void notifyBurnLanded(params.extId, params.bridgeId, bTx);
 
     setPhase('done');
     setStatusMsg('burn confirmed. the relayer auto-unlocks OCT on octra in ~1–2 min — check your octra wallet to confirm receipt.');
@@ -353,6 +385,11 @@ export function E2OFlow({ params }: { params: E2OParams }) {
             </div>
           )}
           {phase === 'failed' && <button onClick={start} style={{ marginTop: 10 }}>retry</button>}
+          {phase === 'done' && params.extId && (
+            <button onClick={() => closeMyTab(params.extId, { stopMusic: true })} style={{ marginTop: 10 }}>
+              all done — close
+            </button>
+          )}
         </div>
       )}
     </div>

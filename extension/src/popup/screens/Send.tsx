@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { send } from '../../lib/messages';
 import { parseAmountToRaw } from '../../lib/rpc';
+import { isValidAddress } from '../../lib/crypto';
 
 interface Props { onDone: () => void; }
 
@@ -14,9 +15,9 @@ export function Send({ onDone }: Props) {
 
   async function doSend() {
     setErr(null); setOkHash(null);
-    if (to.length !== 47 || !to.startsWith('oct')) { setErr('invalid recipient address'); return; }
+    if (!isValidAddress(to)) { setErr('invalid recipient address'); return; }
     let amountRaw: string;
-    try { amountRaw = parseAmountToRaw(amount); } catch { setErr('invalid amount (max 6 decimals)'); return; }
+    try { amountRaw = parseAmountToRaw(amount); } catch (e) { setErr((e as Error).message || 'invalid amount'); return; }
     if (BigInt(amountRaw) <= 0n) { setErr('amount must be > 0'); return; }
     setBusy(true);
     const r = await send<{ tx_hash?: string }>({ kind: 'SEND_TX', to, amountRaw, message: message || undefined });

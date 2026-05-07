@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { send } from '../../lib/messages';
 import { formatRawAmount } from '../../lib/rpc';
+import { BRIDGE_VAULT } from '../../lib/bridge';
 import type { Settings } from '../../lib/wallet';
 
 interface RawTx {
@@ -65,7 +66,10 @@ function categorize(tx: RawTx, me: string): Entry | null {
 
   // rejected? (separate array on the rpc)
   if (tx.type === 'rejected' || tx.error_type) {
-    const isLock = tx.to && tx.amount && tx.from === me; // best-effort guess
+    // Recipient = bridge vault is the only reliable bridge-lock signal we have
+    // for rejected txs. The old heuristic ("from === me") mislabeled every
+    // rejected normal send as a bridge-lock.
+    const isLock = tx.to === BRIDGE_VAULT && tx.from === me;
     return {
       hash: tx.hash,
       ts,

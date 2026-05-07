@@ -1,3 +1,5 @@
+import { formatRawAmount, parseAmountToRaw } from '../../../shared/amount';
+
 export interface RpcOk<T = unknown> { ok: true; result: T }
 export interface RpcErr { ok: false; error: string }
 export type RpcResult<T = unknown> = RpcOk<T> | RpcErr;
@@ -80,29 +82,5 @@ export async function getNonceAndBalance(rpc: string, addr: string): Promise<{ n
   return { nonce, balanceRaw };
 }
 
-const MICRO_PER_OCT = 1_000_000n;
-
-export function parseAmountToRaw(s: string): string {
-  s = String(s).trim();
-  if (!s) return '0';
-  const dot = s.indexOf('.');
-  if (dot < 0) {
-    if (!/^\d+$/.test(s)) throw new Error('invalid amount');
-    return (BigInt(s) * MICRO_PER_OCT).toString();
-  }
-  const ip = s.slice(0, dot);
-  let fp = s.slice(dot + 1);
-  if (ip && !/^\d+$/.test(ip)) throw new Error('invalid amount');
-  if (fp && !/^\d+$/.test(fp)) throw new Error('invalid amount');
-  if (fp.length > 6) fp = fp.slice(0, 6);
-  while (fp.length < 6) fp += '0';
-  const ipN = ip ? BigInt(ip) : 0n;
-  return (ipN * MICRO_PER_OCT + BigInt(fp || '0')).toString();
-}
-
-export function formatRawAmount(raw: string | bigint): string {
-  const v = typeof raw === 'bigint' ? raw : BigInt(raw || '0');
-  const whole = v / MICRO_PER_OCT;
-  const frac = (v % MICRO_PER_OCT).toString().padStart(6, '0').replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : whole.toString();
-}
+// Re-exported from shared so existing call sites keep working.
+export { parseAmountToRaw, formatRawAmount };

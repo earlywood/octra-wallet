@@ -25,6 +25,12 @@ function readParams() {
   return {
     dir: u.searchParams.get('dir') ?? 'o2e',
     id: u.searchParams.get('id') ?? undefined,
+    // Extension's chrome.runtime.id, present when the claim was opened from
+    // the extension. Lets us send a sendMessageExternal back to the popup so
+    // its history flips to claimed/burn_confirmed instantly. Falsy when the
+    // claim site was opened standalone (manual URL, recovery flow), in which
+    // case we just skip the callback.
+    extId: u.searchParams.get('extId') ?? undefined,
     lockTx: u.searchParams.get('lockTx') ?? '',
     amount: u.searchParams.get('amount') ?? '',
     recipient: u.searchParams.get('recipient') ?? '',
@@ -66,6 +72,7 @@ export function App() {
       explorerUrl: p.explorerUrl,
       ethRpcUrl: p.ethRpcUrl,
       bridgeId: p.id,
+      extId: p.extId,
     };
     return (
       <>
@@ -86,6 +93,8 @@ export function App() {
     ethRpcUrl: p.ethRpcUrl,
     octraRecipient: p.octraRecipient,
     suggestedAmount: p.amount || undefined,
+    extId: p.extId,
+    bridgeId: p.id,
   };
   return (
     <>

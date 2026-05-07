@@ -1,13 +1,20 @@
 import {
+  PBKDF2_ITERS,
+  PBKDF2_LEGACY_ITERS,
   aesGcmDecrypt,
   aesGcmEncrypt,
   base64ToBytes,
   bytesToBase64,
+  bytesToHex,
   generateMnemonic12,
   isValidMnemonic,
   keypairFromMnemonic,
   keypairFromPrivateKeyB64,
 } from './crypto';
+import {
+  PROXY_URL,
+  UPSTREAM_RELAYER,
+} from '../../../shared/constants';
 
 const VAULT_KEY_V1 = 'octra:vault:v1';      // legacy single-account vault
 const VAULT_KEY    = 'octra:vault:v2';      // current multi-account vault
@@ -58,6 +65,9 @@ export interface VaultBlob {
   /** non-sensitive surfacing for UI: how many accounts are inside */
   accountCount: number;
   createdAt: number;
+  /** PBKDF2 iteration count used to derive the encryption key. Optional for
+   *  back-compat — blobs written before this field was introduced used 250k. */
+  iters?: number;
 }
 
 export interface Settings {
@@ -85,12 +95,6 @@ export interface UnlockedSession {
 
 // ---------------- defaults / settings ----------------
 
-// Network endpoint constants — exported so the Settings UI can offer a
-// 'use proxy' toggle that swaps between them.
-export const PROXY_URL          = 'https://octra-relay.salamistroker.workers.dev';
-export const UPSTREAM_OCTRA_RPC = 'https://octra.network/rpc';
-export const UPSTREAM_RELAYER   = 'https://relayer-002838819188.octra.network';
-
 const DEFAULTS: Settings = {
   // proxy ON by default: bridge POSTs to the upstream relayer fail in
   // browsers due to a duplicate-CORS-header bug at Octra's nginx (see
@@ -112,11 +116,11 @@ export async function getSettings(): Promise<Settings> {
     migrated = true;
   }
   if (merged.rpcUrl === 'https://octra.network' || merged.rpcUrl === 'https://octra.network/rpc') {
-    merged.rpcUrl = 'https://octra-relay.salamistroker.workers.dev';
+    merged.rpcUrl = PROXY_URL;
     migrated = true;
   }
-  if (merged.relayerUrl === 'https://relayer-002838819188.octra.network') {
-    merged.relayerUrl = 'https://octra-relay.salamistroker.workers.dev';
+  if (merged.relayerUrl === UPSTREAM_RELAYER) {
+    merged.relayerUrl = PROXY_URL;
     migrated = true;
   }
   if (migrated) await chrome.storage.local.set({ [SETTINGS_KEY]: merged });
@@ -145,8 +149,15 @@ export async function hasVault(): Promise<boolean> {
 }
 
 async function writeVaultV2(plain: VaultPlaintextV2, pin: string): Promise<VaultBlob> {
-  const ct = await aesGcmEncrypt(JSON.stringify(plain), pin);
-  const blob: VaultBlob = { ciphertextB64: ct, accountCount: plain.accounts.length, createdAt: Date.now() };
+  // Always write at the current PBKDF2_ITERS — this is the lazy migration path
+  // for legacy 250k blobs: any rename/add/remove/setActive bumps them to 600k.
+  const ct = await aesGcmEncrypt(JSON.stringify(plain), pin, PBKDF2_ITERS);
+  const blob: VaultBlob = {
+    ciphertextB64: ct,
+    accountCount: plain.accounts.length,
+    createdAt: Date.now(),
+    iters: PBKDF2_ITERS,
+  };
   await chrome.storage.local.set({ [VAULT_KEY]: blob });
   return blob;
 }
@@ -206,7 +217,8 @@ async function migrateV1ToV2(pin: string): Promise<VaultPlaintextV2 | null> {
   if (!v1) return null;
   let plain: V1Plain;
   try {
-    plain = JSON.parse(await aesGcmDecrypt(v1.ciphertextB64, pin));
+    // v1 blobs predate the explicit iters field; they were always 250k.
+    plain = JSON.parse(await aesGcmDecrypt(v1.ciphertextB64, pin, PBKDF2_LEGACY_ITERS));
   } catch {
     throw new Error('wrong PIN');
   }
@@ -240,8 +252,12 @@ async function migrateV1ToV2(pin: string): Promise<VaultPlaintextV2 | null> {
 async function decryptVault(pin: string): Promise<VaultPlaintextV2> {
   const blob = await readVault();
   if (blob) {
+    // Use the iter count baked into the blob; default to legacy 250k for
+    // blobs written before that field existed. The next write op (rename/
+    // add/etc) will re-encrypt at the current PBKDF2_ITERS — see writeVaultV2.
+    const iters = blob.iters ?? PBKDF2_LEGACY_ITERS;
     let json: string;
-    try { json = await aesGcmDecrypt(blob.ciphertextB64, pin); }
+    try { json = await aesGcmDecrypt(blob.ciphertextB64, pin, iters); }
     catch { throw new Error('wrong PIN'); }
     return JSON.parse(json) as VaultPlaintextV2;
   }
@@ -263,6 +279,13 @@ export async function unlockVault(pin: string): Promise<{ activeAccount: Account
   const plain = await decryptVault(pin);
   const session = plainToSession(plain, pin);
   await setSession(session);
+  // If the blob is still on legacy iters, transparently re-encrypt at the
+  // current count. Costs one extra PBKDF2 on first unlock after upgrade,
+  // then never again. No user-visible behaviour change.
+  const blob = await readVault();
+  if (blob && (blob.iters ?? PBKDF2_LEGACY_ITERS) !== PBKDF2_ITERS) {
+    await writeVaultV2(plain, pin);
+  }
   return {
     activeAccount: toPublic(plain.accounts.find((a) => a.id === plain.activeAccountId)!),
     accounts: plain.accounts.map(toPublic),
@@ -375,10 +398,10 @@ export async function exportMnemonic(id: string, confirmPin: string): Promise<{ 
 // ---------------- creating accounts ----------------
 
 function newAccountId(): string {
-  // 12-char base32-ish id, plenty of entropy for our small set
+  // 16-char hex (8 bytes of entropy). Plenty unique for our small set.
   const buf = new Uint8Array(8);
   crypto.getRandomValues(buf);
-  return Array.from(buf, (b) => b.toString(36).padStart(2, '0')).join('');
+  return bytesToHex(buf);
 }
 
 function nextDefaultLabel(plain: VaultPlaintextV2): string {
@@ -393,22 +416,11 @@ function nextDefaultLabel(plain: VaultPlaintextV2): string {
   return `Account ${n}`;
 }
 
-function logGen(label: string, mnemonic: string, address: string, hdIndex: number) {
-  // Discreet diagnostic — logs the address + the first two mnemonic words
-  // (enough to verify uniqueness across runs without putting the full seed
-  // in console history). If two consecutive 'wipe → create → generate'
-  // cycles ever produce the SAME first-two-words prefix, that's evidence
-  // of an entropy bug worth chasing.
-  const prefix = mnemonic.split(' ').slice(0, 2).join(' ');
-  console.info(`[octra-wallet] ${label}`, { address, hdIndex, mnemonicPrefix: `${prefix}…` });
-}
-
 /** Initial vault creation — only for the first-ever wallet (when nothing exists). */
 export async function createInitialWallet(pin: string): Promise<{ address: string; mnemonic: string }> {
   if (await hasVault()) throw new Error('vault already exists');
   const mnemonic = generateMnemonic12();
   const kp = keypairFromMnemonic(mnemonic, 0, 2);
-  logGen('createInitialWallet', mnemonic, kp.address, 0);
   const id = newAccountId();
   const plain: VaultPlaintextV2 = {
     version: 2,
@@ -490,36 +502,43 @@ export async function addGeneratedAccount(label?: string): Promise<{ account: Ac
   if (plain.hdMaster) {
     mnemonic = plain.hdMaster.mnemonic;
     hdIndex = plain.hdMaster.nextHdIndex;
-    plain.hdMaster.nextHdIndex++;
   } else {
     // no master — bootstrap one with this account
     mnemonic = generateMnemonic12();
     hdIndex = 0;
-    plain.hdMaster = { mnemonic, nextHdIndex: 1 };
+    plain.hdMaster = { mnemonic, nextHdIndex: 0 };
     returnedMnemonic = mnemonic;
   }
-  const kp = keypairFromMnemonic(mnemonic, hdIndex, 2);
-  logGen('addGeneratedAccount', mnemonic, kp.address, hdIndex);
-  if (plain.accounts.some((a) => a.address === kp.address)) {
-    throw new Error('this account already exists in your wallet');
+  // Walk forward until we find an HD index whose derived address isn't already
+  // in the wallet. Covers the rare case where the user previously imported the
+  // same address by hand. Bumping nextHdIndex past every collision means the
+  // next 'generate' click will succeed cleanly instead of repeatedly hitting
+  // the same dup.
+  for (let attempts = 0; attempts < 10_000; attempts++) {
+    const kp = keypairFromMnemonic(mnemonic, hdIndex, 2);
+    if (!plain.accounts.some((a) => a.address === kp.address)) {
+      plain.hdMaster.nextHdIndex = hdIndex + 1;
+      const id = newAccountId();
+      const acc: AccountInVault = {
+        id,
+        label: label ?? nextDefaultLabel(plain),
+        address: kp.address,
+        publicKeyB64: bytesToBase64(kp.publicKey),
+        privSeed32B64: bytesToBase64(kp.privateKey),
+        source: 'generated',
+        mnemonic,
+        hdIndex,
+        createdAt: Date.now(),
+      };
+      plain.accounts.push(acc);
+      plain.activeAccountId = id;
+      await writeVaultV2(plain, pin);
+      await setSession(plainToSession(plain, pin));
+      return { account: toPublic(acc), mnemonic: returnedMnemonic };
+    }
+    hdIndex++;
   }
-  const id = newAccountId();
-  const acc: AccountInVault = {
-    id,
-    label: label ?? nextDefaultLabel(plain),
-    address: kp.address,
-    publicKeyB64: bytesToBase64(kp.publicKey),
-    privSeed32B64: bytesToBase64(kp.privateKey),
-    source: 'generated',
-    mnemonic,
-    hdIndex,
-    createdAt: Date.now(),
-  };
-  plain.accounts.push(acc);
-  plain.activeAccountId = id;
-  await writeVaultV2(plain, pin);
-  await setSession(plainToSession(plain, pin));
-  return { account: toPublic(acc), mnemonic: returnedMnemonic };
+  throw new Error('too many HD collisions — wallet state is unusual');
 }
 
 export async function addImportedMnemonicAccount(mnemonic: string, label?: string, hdVersion: 1 | 2 = 2): Promise<AccountPublic> {

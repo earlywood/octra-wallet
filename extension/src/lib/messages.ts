@@ -25,7 +25,17 @@ export type Msg =
   | { kind: 'EXPORT_MNEMONIC'; id: string; pin: string }
   // ambient audio (offscreen document)
   | { kind: 'PLAY_MUSIC'; src?: string; volume?: number; loop?: boolean }
-  | { kind: 'STOP_MUSIC' };
+  | { kind: 'STOP_MUSIC' }
+  // bridge entry mutations (also accepted via onMessageExternal from the
+  // claim site so a successful claim updates the popup history immediately
+  // instead of waiting for the next recovery.json poll).
+  | { kind: 'BRIDGE_MARK_CLAIMED'; id: string; claimTxHash?: string }
+  | { kind: 'BRIDGE_MARK_UNLOCKED'; id: string; ethBurnTxHash?: string }
+  // claim-site → extension: "I'm done, close my tab and stop the music".
+  // Closing has to go through the extension because the claim site is a
+  // normal http page and window.close() doesn't work on tabs the page didn't
+  // open. The extension's onMessageExternal handler reads sender.tab.id.
+  | { kind: 'CLOSE_CLAIM_TAB'; stopMusic?: boolean };
 
 export interface Reply<T = unknown> { ok: true; data: T }
 export interface ReplyErr { ok: false; error: string }

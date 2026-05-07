@@ -74,12 +74,6 @@ export async function deleteBridge(id: string): Promise<void> {
   await chrome.storage.local.set({ [KEY]: filtered });
 }
 
-/** wipe every stored bridge entry. used by destroyVault so a fresh wallet
- *  doesn't inherit the previous wallet's bridge history. */
-export async function clearAllBridges(): Promise<void> {
-  await chrome.storage.local.remove(KEY);
-}
-
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

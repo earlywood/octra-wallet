@@ -16,6 +16,8 @@ const buildTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
 export default defineConfig({
   plugins: [react()],
   base,
+  // Allow vite dev server to serve files from ../shared (sibling to this project).
+  server: { fs: { allow: ['..'] } },
   define: {
     __BUILD_HASH__: JSON.stringify(buildHash),
     __BUILD_TIME__: JSON.stringify(buildTime),

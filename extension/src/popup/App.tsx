@@ -28,8 +28,7 @@ export function App() {
 
   let inner;
   if (!status.hasVault) inner = <Onboarding onDone={refresh} />;
-  else if (!status.isUnlocked) inner = <Unlock onUnlock={refresh} />;
-  else if (!status.activeAccount) inner = <div className="app"><div className="content">no active account…</div></div>;
+  else if (!status.isUnlocked || !status.activeAccount) inner = <Unlock onUnlock={refresh} />;
   else inner = <Home active={status.activeAccount} accounts={status.accounts} onLock={refresh} onAccountChanged={refresh} />;
 
   return (

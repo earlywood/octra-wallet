@@ -5,6 +5,7 @@ import { formatRawAmount } from '../lib/bridge';
 import { fetchRecovery, findOurMessage, getClaimCalldata, relayerCall, type RecoveryDoc } from '../lib/relayer';
 import { pollUntilEpoch, sleep, waitForHeader } from '../lib/flow';
 import { simulateClaim, submitClaim, waitForReceipt, type Eip1193Provider } from '../lib/eth';
+import { closeMyTab, notifyClaimLanded } from '../lib/extensionBridge';
 
 export interface O2EParams {
   lockTx: string;
@@ -15,6 +16,9 @@ export interface O2EParams {
   explorerUrl: string;
   ethRpcUrl: string;
   bridgeId?: string;
+  /** chrome.runtime.id of the wallet extension that opened this tab. Used
+   *  to ping the popup when the claim lands so its history updates instantly. */
+  extId?: string;
 }
 
 type Phase = 'wait_lock' | 'wait_header' | 'connect' | 'ready' | 'sim' | 'submit' | 'wait_claim' | 'done' | 'failed';
@@ -206,6 +210,10 @@ export function O2EFlow({ params }: { params: O2EParams }) {
     const r = await waitForReceipt(provider, txHash, 300_000);
     if (!r) { setErr('claim tx not confirmed in 5min. check etherscan.'); setPhase('failed'); return; }
     if (r.status !== '0x1') { setErr('claim tx reverted on-chain.'); setPhase('failed'); return; }
+    // Best-effort ping the originating extension so the popup history flips
+    // to 'claimed' immediately. Falls back to popup's recovery.json poll if
+    // this fails (eg self-hosted claim site not in externally_connectable).
+    void notifyClaimLanded(params.extId, params.bridgeId, txHash);
     setPhase('done');
     setStatusMsg('claimed! wOCT is now in your ethereum wallet.');
   }
@@ -355,10 +363,22 @@ export function O2EFlow({ params }: { params: O2EParams }) {
       )}
 
       {phase === 'done' && (
-        <div className="callout ok">
-          done! check your ethereum wallet to confirm wOCT balance.
-          {claimTx && <> · <a href={`https://etherscan.io/tx/${claimTx}`} target="_blank" rel="noopener noreferrer">view tx</a></>}
-        </div>
+        <>
+          <div className="callout ok">
+            done! check your ethereum wallet to confirm wOCT balance.
+            {claimTx && <> · <a href={`https://etherscan.io/tx/${claimTx}`} target="_blank" rel="noopener noreferrer">view tx</a></>}
+          </div>
+          {params.extId && (
+            <div className="card">
+              <button onClick={() => closeMyTab(params.extId, { stopMusic: true })}>
+                all done — close
+              </button>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, textAlign: 'center' }}>
+                stops the music and closes this tab. wallet history is already updated.
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {phase === 'failed' && (

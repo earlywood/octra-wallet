@@ -4,6 +4,12 @@ import { formatRawAmount, parseAmountToRaw, rpcCall } from '../../lib/rpc';
 import { BRIDGE_VAULT, ETH_BRIDGE, MIN_LOCK_RAW, WOCT_ADDR } from '../../lib/bridge';
 import { deleteBridge, listBridges, newId, patchBridge, upsertBridge, type BridgeEntry } from '../../lib/bridgeStore';
 import type { Settings } from '../../lib/wallet';
+import { isValidEthAddress } from '../../../../shared/address';
+import {
+  DEFAULT_ETH_RPC,
+  DEFAULT_OCTRA_EXPLORER,
+  PROXY_URL,
+} from '../../../../shared/constants';
 
 interface Props { address: string; balanceRaw: string | null; onLockDone: () => void; }
 
@@ -74,11 +80,23 @@ function isLockStillUnclaimed(doc: RecoveryDoc, recipient: string, lockTxHash: s
   return false;
 }
 
-function buildClaimUrl(base: string, params: Record<string, string>): string {
+function buildClaimUrl(base: string, params: Record<string, string | undefined>): string {
   const u = new URL(base);
-  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') u.searchParams.set(k, v);
+  }
   return u.toString();
 }
+
+// Default URLs the claim site already knows. Omitting them when the user is
+// on defaults keeps the URL short AND avoids leaking custom RPCs (which might
+// be private / internal) into browser history and the Referer header.
+const CLAIM_DEFAULTS = {
+  rpc:      PROXY_URL,
+  relayer:  PROXY_URL,
+  explorer: DEFAULT_OCTRA_EXPLORER,
+  ethRpc:   DEFAULT_ETH_RPC,
+};
 
 export function Bridge({ address, balanceRaw, onLockDone }: Props) {
   const [dir, setDir] = useState<Dir>('o2e');
@@ -166,6 +184,17 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
     await refreshHistory();
   }
 
+  // Manual override for the rare case the reconciler hasn't flipped an entry
+  // to 'claimed' even though the user knows the claim landed on eth (eg
+  // they're running a self-hosted claim site that can't sendMessageExternal,
+  // or the recovery.json fetch keeps failing). Shown only for in-flight o2e
+  // entries — failed/claimed are handled by dismiss().
+  async function markClaimedManually(e: BridgeEntry) {
+    if (!confirm('mark this bridge as claimed?\n\nuse this if the reconciler hasn\'t caught up but you can confirm on etherscan that the claim landed. nothing happens on-chain — this only updates popup history.')) return;
+    await patchBridge(e.id, { status: 'claimed' });
+    await refreshHistory();
+  }
+
   async function importLock() {
     setImportErr(null);
     if (!settings) { setImportErr('settings not loaded'); return; }
@@ -224,34 +253,63 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
   }
 
   useEffect(() => {
-    refreshHistory();
     send<Settings>({ kind: 'GET_SETTINGS' }).then((r) => { if (r.ok) setSettings(r.data); });
-    const t = setInterval(refreshHistory, 5000);
-    return () => clearInterval(t);
+    // Only poll while the popup tab is actually visible. The popup typically
+    // closes when the user clicks away, but if it's been undocked into a
+    // window it can stay open hidden behind other windows — pause then. On
+    // (re-)visibility we run an immediate refresh so the user sees fresh state
+    // instead of having to wait for the next tick.
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer != null) return;
+      refreshHistory();
+      timer = setInterval(refreshHistory, 5000);
+    };
+    const stop  = () => { if (timer != null) { clearInterval(timer); timer = null; } };
+    const onVis = () => { if (document.visibilityState === 'visible') start(); else stop(); };
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
   }, []);
 
   useEffect(() => {
     if (!settings) return;
     const run = async () => { reconcileActive(await listBridges(), settings.rpcUrl, settings.relayerUrl); };
-    run();
-    // 15s — the recovery.json fetch is ~170KB so we don't want to hammer it,
-    // and claim status doesn't change second-to-second anyway.
-    const t = setInterval(run, 15000);
-    return () => clearInterval(t);
+    // 8s — the recovery.json fetch is ~170KB and claim status doesn't change
+    // second-to-second, but the previous 15s felt sluggish to users staring
+    // at "lock confirmed" waiting for it to flip. The claim site also pings
+    // us directly via BRIDGE_MARK_CLAIMED on the happy path; this loop is
+    // the fallback for when that signal is missed (eg user closed claim tab
+    // before it landed, or self-hosted claim site not in externally_connectable).
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (timer == null) { run(); timer = setInterval(run, 8000); } };
+    const stop  = () => { if (timer != null) { clearInterval(timer); timer = null; } };
+    const onVis = () => { if (document.visibilityState === 'visible') start(); else stop(); };
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVis);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
   }, [settings]);
 
   function openO2eClaim(entry: BridgeEntry) {
     if (!settings) return;
+    // Only forward URL overrides when they differ from the claim site's own
+    // defaults. Saves a bunch of URL bytes AND avoids leaking custom (potentially
+    // private) RPC URLs into browser history / Referer headers.
+    //
+    // extId lets the claim site sendMessageExternal back to us when the claim
+    // confirms — wires up the BRIDGE_MARK_CLAIMED fast path so popup history
+    // updates immediately instead of waiting on the recovery.json poll.
     const url = buildClaimUrl(settings.claimUrl, {
       dir: 'o2e',
       id: entry.id,
       lockTx: entry.octraLockTxHash ?? '',
       amount: entry.amountRaw,
       recipient: entry.ethRecipient ?? '',
-      rpc: settings.rpcUrl,
-      relayer: settings.relayerUrl,
-      explorer: settings.explorerUrl,
-      ethRpc: settings.ethRpcUrl,
+      extId:    chrome.runtime.id,
+      rpc:      settings.rpcUrl      !== CLAIM_DEFAULTS.rpc      ? settings.rpcUrl      : undefined,
+      relayer:  settings.relayerUrl  !== CLAIM_DEFAULTS.relayer  ? settings.relayerUrl  : undefined,
+      explorer: settings.explorerUrl !== CLAIM_DEFAULTS.explorer ? settings.explorerUrl : undefined,
+      ethRpc:   settings.ethRpcUrl   !== CLAIM_DEFAULTS.ethRpc   ? settings.ethRpcUrl   : undefined,
     });
     chrome.tabs.create({ url });
   }
@@ -261,8 +319,9 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
     const url = buildClaimUrl(settings.claimUrl, {
       dir: 'e2o',
       octraRecipient: address,
-      rpc: settings.rpcUrl,
-      ethRpc: settings.ethRpcUrl,
+      extId:  chrome.runtime.id,
+      rpc:    settings.rpcUrl    !== CLAIM_DEFAULTS.rpc    ? settings.rpcUrl    : undefined,
+      ethRpc: settings.ethRpcUrl !== CLAIM_DEFAULTS.ethRpc ? settings.ethRpcUrl : undefined,
     });
     chrome.tabs.create({ url });
   }
@@ -275,7 +334,7 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
   async function doLock() {
     setErr(null);
     if (!settings) { setErr('settings not loaded'); return; }
-    if (!/^0x[0-9a-fA-F]{40}$/.test(eth)) { setErr('invalid eth recipient'); return; }
+    if (!isValidEthAddress(eth)) { setErr('invalid eth recipient'); return; }
     let amountRaw: string;
     try { amountRaw = parseAmountToRaw(amount); } catch { setErr('invalid amount (max 6 decimals)'); return; }
     if (BigInt(amountRaw) <= 0n) { setErr('amount must be > 0'); return; }
@@ -283,10 +342,6 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
       setErr(`bridge minimum is ${formatRawAmount(MIN_LOCK_RAW.toString())} OCT — anything less reverts on-chain`);
       return;
     }
-    // Fire & forget — start the music in the background offscreen doc so it
-    // keeps playing after this popup closes when the new claim tab takes focus.
-    // Skip if user disabled the music toggle in Settings → About.
-    if (settings.musicEnabled !== false) void send({ kind: 'PLAY_MUSIC' });
     setBusy(true);
     const r = await send<{ tx_hash?: string }>({
       kind: 'BRIDGE_LOCK',
@@ -296,6 +351,12 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
     setBusy(false);
     if (!r.ok) { setErr(r.error); return; }
     if (!r.data.tx_hash) { setErr('lock submitted but no tx hash returned'); return; }
+
+    // Only kick off music AFTER the lock succeeds — earlier and a failed lock
+    // would leave the popup blasting punjabi while the user reads the error.
+    // Fire & forget so it can keep playing after the popup closes when the
+    // claim tab takes focus.
+    if (settings.musicEnabled !== false) void send({ kind: 'PLAY_MUSIC' });
 
     const id = newId('o2e');
     const entry: BridgeEntry = {
@@ -437,6 +498,16 @@ export function Bridge({ address, balanceRaw, onLockDone }: Props) {
               {isActive(e.status) && (
                 <button onClick={() => reopenEntry(e)} style={{ padding: '4px 8px', fontSize: 11 }}>
                   resume
+                </button>
+              )}
+              {isActive(e.status) && e.direction === 'o2e' && (
+                <button
+                  onClick={() => markClaimedManually(e)}
+                  className="ghost"
+                  title="mark as claimed (use only if you've confirmed on etherscan that the claim landed)"
+                  style={{ padding: '4px 8px', fontSize: 11 }}
+                >
+                  ✓
                 </button>
               )}
               <button

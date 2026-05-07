@@ -4,7 +4,13 @@
 // worker creates this doc when needed and posts {target:'offscreen', kind:...}
 // messages here to control the player.
 
-const player = document.getElementById('player') as HTMLAudioElement;
+const player = document.getElementById('player') as HTMLAudioElement | null;
+if (!player) {
+  // index.html is bundled with this script — if the element is missing, the
+  // build is broken. Fail loudly instead of TypeError'ing on every play.
+  console.error('[octra-offscreen] missing #player audio element in index.html');
+  throw new Error('offscreen audio element not found');
+}
 
 interface OffscreenMsg {
   target?: string;

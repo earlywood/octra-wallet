@@ -29,6 +29,14 @@ const manifest = defineManifest({
     'http://*/*',
     'https://*/*',
   ],
+  // Lets the bridge claim site post a direct "claim landed" signal back to
+  // the extension instead of waiting for the popup's recovery.json poll loop
+  // to detect it (which can take 30–90s after a claim confirms on eth).
+  // Origin matches the default claimUrl; users who self-host elsewhere will
+  // fall back to polling, which still works.
+  externally_connectable: {
+    matches: ['https://octra.ac420.org/*'],
+  },
   icons: {
     16: 'icons/icon16.png',
     48: 'icons/icon48.png',
@@ -38,7 +46,8 @@ const manifest = defineManifest({
 
 export default defineConfig({
   plugins: [react(), crx({ manifest })],
-  server: { port: 5173, strictPort: true, hmr: { port: 5173 } },
+  // Allow vite dev server to serve files from ../shared (sibling to this project).
+  server: { port: 5173, strictPort: true, hmr: { port: 5173 }, fs: { allow: ['..'] } },
   define: {
     __BUILD_HASH__: JSON.stringify(buildHash),
     __BUILD_TIME__: JSON.stringify(buildTime),

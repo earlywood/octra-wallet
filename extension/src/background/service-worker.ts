@@ -26,6 +26,7 @@ import { aesGcmDecrypt } from '../lib/crypto';
 import { getNonceAndBalance, getTxsByAddress, submitTx } from '../lib/rpc';
 import { buildSendTx, signTx } from '../lib/tx';
 import { lockOctToEth } from '../lib/bridge';
+import { patchBridge } from '../lib/bridgeStore';
 import type { Msg, Reply, ReplyErr } from '../lib/messages';
 
 async function requireUnlocked(): Promise<{ address: string; publicKeyB64: string; privSeed32B64: string }> {
@@ -221,6 +222,28 @@ async function handle(msg: Msg): Promise<Reply | ReplyErr> {
         await closeOffscreen();
         return { ok: true, data: null };
       }
+
+      case 'BRIDGE_MARK_CLAIMED': {
+        // Direct signal from the claim site after a successful eth claim.
+        // Skips the recovery.json poll wait so the popup history flips to
+        // 'claimed' immediately. No-op if the entry was already removed/marked.
+        const updated = await patchBridge(msg.id, { status: 'claimed', claimTxHash: msg.claimTxHash });
+        return { ok: true, data: updated };
+      }
+      case 'BRIDGE_MARK_UNLOCKED': {
+        // Same idea for the e2o flow's burn confirmation. The relayer's
+        // OCT-side unlock that follows is harder to detect from the popup;
+        // this at least shows the user's burn has landed.
+        const updated = await patchBridge(msg.id, { status: 'burn_confirmed', ethBurnTxHash: msg.ethBurnTxHash });
+        return { ok: true, data: updated };
+      }
+      case 'CLOSE_CLAIM_TAB': {
+        // Handled in the onMessageExternal listener directly so we have
+        // access to sender.tab.id. Returning here is the no-op fallback for
+        // the (unexpected) internal-call case.
+        return { ok: true, data: null };
+      }
+
       default:
         return { ok: false, error: `unknown msg: ${(msg as { kind?: string }).kind ?? 'unknown'}` };
     }
@@ -236,6 +259,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && (msg as { kind?: string }).kind === 'OFFSCREEN_AUDIO_DONE') {
     void closeOffscreen();
     return false;
+  }
+  handle(msg as Msg).then(sendResponse);
+  return true;
+});
+
+// External messages — only accepted from the origins listed in manifest's
+// `externally_connectable.matches`. The claim site uses this to push a
+// "claim landed" / "burn landed" signal so the popup updates instantly.
+// Allow-list which message kinds can come in this way; do NOT just forward
+// arbitrary Msg, since the external origin shouldn't be able to e.g. send
+// a SEND_TX or unlock messages.
+const EXTERNAL_KINDS = new Set(['BRIDGE_MARK_CLAIMED', 'BRIDGE_MARK_UNLOCKED', 'CLOSE_CLAIM_TAB']);
+chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  const kind = (msg as { kind?: string })?.kind;
+  if (!kind || !EXTERNAL_KINDS.has(kind)) {
+    sendResponse({ ok: false, error: 'kind not permitted from external origin' });
+    return false;
+  }
+  // CLOSE_CLAIM_TAB is special — it needs sender.tab.id to know what tab to
+  // close, so we handle it inline rather than routing through handle().
+  if (kind === 'CLOSE_CLAIM_TAB') {
+    void (async () => {
+      const stopMusic = (msg as { stopMusic?: boolean }).stopMusic;
+      if (stopMusic) {
+        try { await chrome.runtime.sendMessage({ target: 'offscreen', kind: 'STOP' }); } catch { /* no doc */ }
+        await closeOffscreen();
+      }
+      const tabId = sender.tab?.id;
+      if (tabId != null) {
+        try { await chrome.tabs.remove(tabId); } catch { /* tab already gone */ }
+      }
+      sendResponse({ ok: true, data: null });
+    })();
+    return true;
   }
   handle(msg as Msg).then(sendResponse);
   return true;

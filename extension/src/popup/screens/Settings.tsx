@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { send } from '../../lib/messages';
-import { PROXY_URL, UPSTREAM_OCTRA_RPC, UPSTREAM_RELAYER, type Settings as SettingsT, type AccountPublic } from '../../lib/wallet';
+import { type Settings as SettingsT, type AccountPublic } from '../../lib/wallet';
 import { Identicon } from '../Identicon';
 
 interface Props { onAccountsChanged: () => void }
@@ -36,18 +36,6 @@ function NetworkTab() {
 
   if (!s) return <div className="status info">loading…</div>;
 
-  // Toggle is derived from URL state — if BOTH endpoints point at the proxy
-  // it's "on", otherwise "off" (covers direct upstream and any custom URL).
-  const usingProxy = s.rpcUrl === PROXY_URL && s.relayerUrl === PROXY_URL;
-  function toggleProxy() {
-    if (!s) return;
-    if (usingProxy) {
-      setS({ ...s, rpcUrl: UPSTREAM_OCTRA_RPC, relayerUrl: UPSTREAM_RELAYER });
-    } else {
-      setS({ ...s, rpcUrl: PROXY_URL, relayerUrl: PROXY_URL });
-    }
-  }
-
   async function save() {
     if (!s) return;
     setMsg(null);
@@ -58,48 +46,25 @@ function NetworkTab() {
 
   return (
     <>
-      <div className="callout">
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontWeight: 500, fontSize: 12 }}>cloudflare proxy</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-              routes octra rpc + bridge relayer requests through a CF worker.
-            </div>
-          </div>
-          <button
-            type="button"
-            className={`toggle${usingProxy ? ' on' : ''}`}
-            onClick={toggleProxy}
-            aria-pressed={usingProxy}
-            aria-label="toggle cloudflare proxy"
-          />
-        </div>
-        {!usingProxy && (
-          <div className="callout warn" style={{ marginTop: 8, fontSize: 11, padding: '8px 10px' }}>
-            direct mode: bridge POSTs from browsers currently fail due to the upstream CORS bug. turn this on if your bridge isn't working.
-          </div>
-        )}
-      </div>
-
       <div>
         <label htmlFor="set-rpc">octra rpc</label>
-        <input id="set-rpc" name="rpcUrl" autoComplete="off" value={s.rpcUrl} onChange={(e) => setS({ ...s, rpcUrl: e.target.value })} />
+        <input id="set-rpc" name="rpcUrl" autoComplete="off" spellCheck={false} value={s.rpcUrl} onChange={(e) => setS({ ...s, rpcUrl: e.target.value })} />
       </div>
       <div>
         <label htmlFor="set-relayer">bridge relayer</label>
-        <input id="set-relayer" name="relayerUrl" autoComplete="off" value={s.relayerUrl} onChange={(e) => setS({ ...s, relayerUrl: e.target.value })} />
+        <input id="set-relayer" name="relayerUrl" autoComplete="off" spellCheck={false} value={s.relayerUrl} onChange={(e) => setS({ ...s, relayerUrl: e.target.value })} />
       </div>
       <div>
         <label htmlFor="set-explorer">explorer</label>
-        <input id="set-explorer" name="explorerUrl" autoComplete="off" value={s.explorerUrl} onChange={(e) => setS({ ...s, explorerUrl: e.target.value })} />
+        <input id="set-explorer" name="explorerUrl" autoComplete="off" spellCheck={false} value={s.explorerUrl} onChange={(e) => setS({ ...s, explorerUrl: e.target.value })} />
       </div>
       <div>
         <label htmlFor="set-ethrpc">ethereum rpc (read-only, used to check wOCT balance)</label>
-        <input id="set-ethrpc" name="ethRpcUrl" autoComplete="off" value={s.ethRpcUrl} onChange={(e) => setS({ ...s, ethRpcUrl: e.target.value })} />
+        <input id="set-ethrpc" name="ethRpcUrl" autoComplete="off" spellCheck={false} value={s.ethRpcUrl} onChange={(e) => setS({ ...s, ethRpcUrl: e.target.value })} />
       </div>
       <div>
         <label htmlFor="set-claimurl">bridge claim page</label>
-        <input id="set-claimurl" name="claimUrl" autoComplete="off" value={s.claimUrl} onChange={(e) => setS({ ...s, claimUrl: e.target.value })} placeholder="https://you.github.io/octra-claim/" />
+        <input id="set-claimurl" name="claimUrl" autoComplete="off" spellCheck={false} value={s.claimUrl} onChange={(e) => setS({ ...s, claimUrl: e.target.value })} placeholder="https://you.github.io/octra-claim/" />
         <div className="status info" style={{ marginTop: 4 }}>
           static page that handles the ethereum side of the bridge with your browser wallet. open-source — see the project's <code>claim-site/</code> directory.
         </div>
@@ -156,12 +121,9 @@ function AboutTab() {
       </div>
 
       <div className="callout">
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 500, fontSize: 12 }}>funny music</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-              plays a song when you bridge to eth. turn off if your coworkers are nearby.
-            </div>
           </div>
           <button
             type="button"
