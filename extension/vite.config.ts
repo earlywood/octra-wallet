@@ -12,11 +12,11 @@ const buildTime = new Date().toISOString().slice(0, 16).replace('T', ' ');
 const manifest = defineManifest({
   manifest_version: 3,
   name: 'Unofficial Octra Wallet',
-  version: '1.0.0',
+  version: '1.0.1',
   description: 'Unofficial browser wallet for the Octra network with built-in OCT ↔ wOCT bridge. Not affiliated with Octra Labs.',
   action: { default_popup: 'src/popup/index.html', default_title: 'Unofficial Octra Wallet' },
   background: { service_worker: 'src/background/service-worker.ts', type: 'module' },
-  permissions: ['storage', 'tabs', 'offscreen'],
+  permissions: ['storage', 'offscreen'],
   // Narrowed to the URLs we actually hit by default — the CF Worker proxy
   // (which fronts both Octra RPC and the bridge relayer) and a public
   // mainnet ETH RPC for read-only wOCT balance queries. Users who customise
